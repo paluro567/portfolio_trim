@@ -79,5 +79,18 @@ def sessions_return(series: pd.Series, window: int) -> pd.Series:
     return series / series.shift(window) - 1.0
 
 
+def ffill_asof(values: pd.Series, dates: pd.DatetimeIndex) -> pd.Series:
+    """Latest value at or before each feature date (as-of forward fill).
+    For data that is public from its own index date: fundamental snapshots
+    (as_of_date) and reported earnings events (event date)."""
+    if values.dropna().empty:
+        return pd.Series(float("nan"), index=dates)
+    frame = values.dropna().sort_index()
+    right = pd.DataFrame({"as_of": pd.to_datetime(frame.index), "value": frame.values})
+    left = pd.DataFrame({"feature_date": pd.to_datetime(dates)})
+    merged = pd.merge_asof(left, right, left_on="feature_date", right_on="as_of")
+    return pd.Series(merged["value"].values, index=dates, dtype=float)
+
+
 def as_of_date_index(values: list[date]) -> pd.DatetimeIndex:
     return pd.DatetimeIndex(pd.to_datetime(values))

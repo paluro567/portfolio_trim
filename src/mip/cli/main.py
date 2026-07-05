@@ -17,6 +17,7 @@ from mip.cli.features import app as features_app
 from mip.cli.ingest import app as ingest_app
 from mip.cli.macro import app as macro_app
 from mip.cli.quality import app as quality_app
+from mip.cli.research import app as research_app
 from mip.cli.runs import app as runs_app
 from mip.cli.universe import app as universe_app
 from mip.core.exceptions import ConfigurationError
@@ -34,6 +35,7 @@ app.add_typer(ingest_app, name="ingest")
 app.add_typer(macro_app, name="macro")
 app.add_typer(earnings_app, name="earnings")
 app.add_typer(features_app, name="features")
+app.add_typer(research_app, name="research")
 app.add_typer(runs_app, name="runs")
 app.add_typer(quality_app, name="quality")
 

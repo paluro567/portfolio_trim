@@ -34,6 +34,13 @@ def to_feature_value(value: float) -> Decimal:
     return Decimal(str(round(float(value), 8))).quantize(_VALUE_QUANTUM)
 
 
+def _to_series(rows: list[tuple[date, Decimal]]) -> pd.Series:
+    if not rows:
+        return pd.Series(dtype=float)
+    index = pd.DatetimeIndex(pd.to_datetime([r[0] for r in rows]))
+    return pd.Series([float(r[1]) for r in rows], index=index)
+
+
 class FeatureRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -143,6 +150,29 @@ class FeatureRepository:
             ).returning(model.feature_id)
             affected += len(self._session.execute(stmt).fetchall())
         return affected
+
+    # -- reads (research consumption goes through this seam) ----------------------------
+
+    def get_instrument_series(self, feature_id: int, instrument_id: int) -> pd.Series:
+        """Full stored history of one instrument feature, date-indexed."""
+        rows = self._session.execute(
+            select(FeatureStoreDaily.feature_date, FeatureStoreDaily.value)
+            .where(
+                FeatureStoreDaily.feature_id == feature_id,
+                FeatureStoreDaily.instrument_id == instrument_id,
+            )
+            .order_by(FeatureStoreDaily.feature_date)
+        ).all()
+        return _to_series(rows)
+
+    def get_market_series(self, feature_id: int) -> pd.Series:
+        """Full stored history of one market feature, date-indexed."""
+        rows = self._session.execute(
+            select(FeatureStoreMarketDaily.feature_date, FeatureStoreMarketDaily.value)
+            .where(FeatureStoreMarketDaily.feature_id == feature_id)
+            .order_by(FeatureStoreMarketDaily.feature_date)
+        ).all()
+        return _to_series(rows)
 
     # -- matrix builder (date x symbol x feature) --------------------------------------
 

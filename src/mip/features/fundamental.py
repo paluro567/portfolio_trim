@@ -5,18 +5,7 @@ import numpy as np
 import pandas as pd
 
 from mip.domain.enums import FeatureScope
-from mip.features.base import FeatureCalculator, FeatureContext, FeatureSpec
-
-
-def _ffill_snapshots(values: pd.Series, dates: pd.DatetimeIndex) -> pd.Series:
-    """Latest snapshot value at or before each feature date."""
-    if values.dropna().empty:
-        return pd.Series(float("nan"), index=dates)
-    frame = values.dropna().sort_index()
-    right = pd.DataFrame({"as_of": pd.to_datetime(frame.index), "value": frame.values})
-    left = pd.DataFrame({"feature_date": pd.to_datetime(dates)})
-    merged = pd.merge_asof(left, right, left_on="feature_date", right_on="as_of")
-    return pd.Series(merged["value"].values, index=dates, dtype=float)
+from mip.features.base import FeatureCalculator, FeatureContext, FeatureSpec, ffill_asof
 
 
 class FundamentalField(FeatureCalculator):
@@ -35,7 +24,7 @@ class FundamentalField(FeatureCalculator):
         if ctx.fundamentals is None or ctx.fundamentals.empty:
             return pd.Series(float("nan"), index=ctx.dates)
         values = ctx.fundamentals[str(self.spec.params["field"])]
-        aligned = _ffill_snapshots(values, ctx.dates)
+        aligned = ffill_asof(values, ctx.dates)
         if self.spec.params["log10"]:
             aligned = aligned.where(aligned > 0)
             return pd.Series(np.log10(aligned), index=ctx.dates)
@@ -59,7 +48,7 @@ class PriceToSales(FeatureCalculator):
             return pd.Series(float("nan"), index=ctx.dates)
         revenue = ctx.fundamentals["revenue_ttm"].where(ctx.fundamentals["revenue_ttm"] > 0)
         ratio = ctx.fundamentals["market_cap"] / revenue
-        return _ffill_snapshots(ratio, ctx.dates)
+        return ffill_asof(ratio, ctx.dates)
 
 
 class RevenueGrowthYoY(FeatureCalculator):
@@ -93,7 +82,7 @@ class RevenueGrowthYoY(FeatureCalculator):
                 growth[as_of] = revenue.iloc[position] / base - 1.0
         if not growth:
             return pd.Series(float("nan"), index=ctx.dates)
-        return _ffill_snapshots(pd.Series(growth), ctx.dates)
+        return ffill_asof(pd.Series(growth), ctx.dates)
 
 
 class EpsGrowthYoY(FeatureCalculator):
@@ -126,4 +115,4 @@ class EpsGrowthYoY(FeatureCalculator):
                 growth[dates[i]] = actuals[i] / base - 1.0
         if not growth:
             return pd.Series(float("nan"), index=ctx.dates)
-        return _ffill_snapshots(pd.Series(growth), ctx.dates)
+        return ffill_asof(pd.Series(growth), ctx.dates)

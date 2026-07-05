@@ -407,6 +407,7 @@ class FeaturePipeline:
             select(
                 EarningsObservation.earnings_date,
                 EarningsObservation.eps_actual,
+                EarningsObservation.eps_estimate,
             )
             .where(
                 EarningsObservation.instrument_id == instrument_id,
@@ -415,9 +416,10 @@ class FeaturePipeline:
             .order_by(EarningsObservation.earnings_date, EarningsObservation.observed_at)
         ).all()
         if not rows:
-            return pd.DataFrame(columns=["earnings_date", "eps_actual"])
-        frame = pd.DataFrame(rows, columns=["earnings_date", "eps_actual"])
+            return pd.DataFrame(columns=["earnings_date", "eps_actual", "eps_estimate"])
+        frame = pd.DataFrame(rows, columns=["earnings_date", "eps_actual", "eps_estimate"])
         frame["eps_actual"] = frame["eps_actual"].astype(float)
+        frame["eps_estimate"] = frame["eps_estimate"].astype(float)
         # latest observation per event
         return frame.groupby("earnings_date", as_index=False).last()
 

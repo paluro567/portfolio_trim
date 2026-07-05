@@ -38,3 +38,10 @@ def test_find_project_root_walks_upward(tmp_path: Path) -> None:
 def test_find_project_root_fails_loudly(tmp_path: Path) -> None:
     with pytest.raises(ConfigurationError, match="alembic.ini not found"):
         find_project_root(tmp_path)
+
+
+def test_research_group_registered() -> None:
+    result = runner.invoke(app, ["research", "--help"])
+    assert result.exit_code == 0
+    for command in ("query", "describe", "export"):
+        assert command in result.output

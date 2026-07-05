@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from mip.domain.enums import FeatureScope
-from mip.features.base import FeatureCalculator, FeatureContext, FeatureSpec
+from mip.features.base import FeatureCalculator, FeatureContext, FeatureSpec, ffill_asof
 
 
 class DaysSinceEarnings(FeatureCalculator):
@@ -69,6 +69,39 @@ class DaysUntilEarnings(FeatureCalculator):
                 float((pd.Timestamp(visible.min()) - d).days) if len(visible) else float("nan")
             )
         return pd.Series(values, index=ctx.dates, dtype=float)
+
+
+class EpsSurprise(FeatureCalculator):
+    """Relative EPS surprise of the most recent reported event:
+    (actual - estimate) / |estimate|. Public from the event date, carried
+    forward until the next report — combine with days_since_earnings to
+    isolate the post-report window (beats: eps_surprise > 0)."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            FeatureSpec(
+                name="eps_surprise",
+                version=1,
+                scope=FeatureScope.INSTRUMENT,
+                description=(
+                    "Relative EPS surprise of the last reported earnings event: "
+                    "(actual - estimate) / |estimate|"
+                ),
+                params={"source": "reported_events"},
+            )
+        )
+
+    def compute(self, ctx: FeatureContext) -> pd.Series:
+        reported = ctx.earnings_reported
+        if reported is None or reported.empty or "eps_estimate" not in reported:
+            return pd.Series(float("nan"), index=ctx.dates)
+        events = reported.dropna(subset=["eps_actual", "eps_estimate"])
+        events = events[events["eps_estimate"] != 0]
+        if events.empty:
+            return pd.Series(float("nan"), index=ctx.dates)
+        surprise = (events["eps_actual"] - events["eps_estimate"]) / events["eps_estimate"].abs()
+        surprise.index = pd.to_datetime(events["earnings_date"])
+        return ffill_asof(surprise, ctx.dates)
 
 
 class EarningsRecency(FeatureCalculator):

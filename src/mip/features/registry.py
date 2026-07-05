@@ -8,7 +8,12 @@ from graphlib import CycleError, TopologicalSorter
 
 from mip.core.exceptions import ConfigurationError
 from mip.features.base import FeatureCalculator
-from mip.features.earnings import DaysSinceEarnings, DaysUntilEarnings, EarningsRecency
+from mip.features.earnings import (
+    DaysSinceEarnings,
+    DaysUntilEarnings,
+    EarningsRecency,
+    EpsSurprise,
+)
 from mip.features.fundamental import (
     EpsGrowthYoY,
     FundamentalField,
@@ -100,6 +105,7 @@ def build_registry() -> list[FeatureCalculator]:
         DaysSinceEarnings(),
         DaysUntilEarnings(),
         EarningsRecency(),
+        EpsSurprise(),
         # -- market regimes ----------------------------------------------------
         RegimeBull(),
         RegimeHighVol(),
