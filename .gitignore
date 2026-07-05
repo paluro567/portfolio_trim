@@ -1,0 +1,22 @@
+# Environment / secrets
+.env
+
+# Immutable raw archive — never versioned (keep folder structure)
+RawData/*
+!RawData/prices/.gitkeep
+!RawData/macro/.gitkeep
+!RawData/fundamentals/.gitkeep
+!RawData/earnings/.gitkeep
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/

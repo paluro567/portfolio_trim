@@ -1,0 +1,151 @@
+# Universe definition — versioned in git; the single declaration of the
+# instrument universe. Edit freely and re-run `mip universe seed`
+# (seeding is idempotent; removals are NOT applied — instruments are
+# never deleted, per architecture).
+
+version: 2
+
+# GICS sectors with their Select Sector SPDR ETFs. The ETF mapping powers
+# the "relative return vs sector ETF" feature (Phase 5). All 11 sectors
+# keep their SPDR mapping (XLB/XLP included) so every classified holding
+# has a sector benchmark; SMH/SOXX are industry ETFs and are listed under
+# instruments instead.
+sectors:
+  - name: Information Technology
+    etf: XLK
+  - name: Health Care
+    etf: XLV
+  - name: Financials
+    etf: XLF
+  - name: Consumer Discretionary
+    etf: XLY
+  - name: Communication Services
+    etf: XLC
+  - name: Industrials
+    etf: XLI
+  - name: Consumer Staples
+    etf: XLP
+  - name: Energy
+    etf: XLE
+  - name: Utilities
+    etf: XLU
+  - name: Real Estate
+    etf: XLRE
+  - name: Materials
+    etf: XLB
+
+instruments:
+  # ---- Market benchmarks ---------------------------------------------
+  - {symbol: SPY, type: etf, name: SPDR S&P 500 ETF Trust}
+  - {symbol: QQQ, type: etf, name: Invesco QQQ Trust (Nasdaq-100)}
+  - {symbol: IWM, type: etf, name: iShares Russell 2000 ETF}
+  - {symbol: DIA, type: etf, name: SPDR Dow Jones Industrial Average ETF}
+  - {symbol: VTI, type: etf, name: Vanguard Total Stock Market ETF}
+
+  # ---- Industry ETFs (sector-classified, not sector benchmarks) ------
+  - {symbol: SMH, type: etf, name: VanEck Semiconductor ETF, sector: Information Technology}
+  - {symbol: SOXX, type: etf, name: iShares Semiconductor ETF, sector: Information Technology}
+
+  # ---- Core holdings --------------------------------------------------
+  - symbol: AMZN
+    name: Amazon.com Inc.
+    type: stock
+    sector: Consumer Discretionary
+    industry: Broadline Retail
+  - symbol: AMD
+    name: Advanced Micro Devices Inc.
+    type: stock
+    sector: Information Technology
+    industry: Semiconductors
+  - symbol: CRM
+    name: Salesforce Inc.
+    type: stock
+    sector: Information Technology
+    industry: Software
+  - symbol: ADBE
+    name: Adobe Inc.
+    type: stock
+    sector: Information Technology
+    industry: Software
+  - symbol: HNST
+    name: The Honest Company Inc.
+    type: stock
+    sector: Consumer Staples
+    industry: Personal Care Products
+  - symbol: TSLA
+    name: Tesla Inc.
+    type: stock
+    sector: Consumer Discretionary
+    industry: Automobiles
+  - symbol: NOW
+    name: ServiceNow Inc.
+    type: stock
+    sector: Information Technology
+    industry: Software
+
+  # ---- Watchlist / research -------------------------------------------
+  - symbol: NVDA
+    name: NVIDIA Corporation
+    type: stock
+    sector: Information Technology
+    industry: Semiconductors
+  - symbol: CELH
+    name: Celsius Holdings Inc.
+    type: stock
+    sector: Consumer Staples
+    industry: Beverages
+  - symbol: PATH
+    name: UiPath Inc.
+    type: stock
+    sector: Information Technology
+    industry: Software
+  - symbol: CEG
+    name: Constellation Energy Corporation
+    type: stock
+    sector: Utilities
+    industry: Electric Utilities
+  - symbol: VST
+    name: Vistra Corp.
+    type: stock
+    sector: Utilities
+    industry: Independent Power Producers
+  - symbol: OKLO
+    name: Oklo Inc.
+    type: stock
+    sector: Utilities
+    industry: Electric Utilities
+  - symbol: GEV
+    name: GE Vernova Inc.
+    type: stock
+    sector: Industrials
+    industry: Heavy Electrical Equipment
+  - symbol: CCJ
+    name: Cameco Corporation
+    type: stock
+    sector: Energy
+    industry: Uranium
+  - symbol: FCX
+    name: Freeport-McMoRan Inc.
+    type: stock
+    sector: Materials
+    industry: Copper
+  - symbol: BHP
+    name: BHP Group Limited (ADR)
+    type: stock
+    sector: Materials
+    industry: Diversified Metals & Mining
+  - symbol: SCCO
+    name: Southern Copper Corporation
+    type: stock
+    sector: Materials
+    industry: Copper
+  - symbol: RIO
+    name: Rio Tinto Group (ADR)
+    type: stock
+    sector: Materials
+    industry: Diversified Metals & Mining
+  - symbol: GLNCY
+    name: Glencore plc (ADR)
+    type: stock
+    sector: Materials
+    industry: Diversified Metals & Mining

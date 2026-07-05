@@ -1,0 +1,185 @@
+# FRED macroeconomic series catalog — versioned in git; the single
+# declaration of which macro series the platform ingests. Adding a series
+# is a YAML edit + `mip ingest macro`; no code change, no migration.
+#
+# publication_lag_days is REQUIRED for every series (the parser rejects
+# omissions). It is a conservative constant: obs_date + lag = first date
+# the value was knowable. FRED dates monthly series at month START and
+# quarterly series at quarter START, so lags span the reference period
+# plus the release delay. Upgrade path: true release dates from FRED's
+# releases API (architecture §4.3).
+#
+# min_value/max_value are plausibility guards: values outside the range
+# are quarantined as data errors (a 10y yield of 45 is a parse error,
+# not a regime change).
+
+version: 1
+
+categories:
+  - name: Treasury Yields
+    series:
+      - code: DGS2
+        name: 2-Year Treasury Constant Maturity Rate
+        frequency: D
+        units: percent
+        seasonally_adjusted: false
+        publication_lag_days: 1
+        min_value: -2
+        max_value: 25
+      - code: DGS5
+        name: 5-Year Treasury Constant Maturity Rate
+        frequency: D
+        units: percent
+        seasonally_adjusted: false
+        publication_lag_days: 1
+        min_value: -2
+        max_value: 25
+      - code: DGS10
+        name: 10-Year Treasury Constant Maturity Rate
+        frequency: D
+        units: percent
+        seasonally_adjusted: false
+        publication_lag_days: 1
+        min_value: -2
+        max_value: 25
+      - code: DGS30
+        name: 30-Year Treasury Constant Maturity Rate
+        frequency: D
+        units: percent
+        seasonally_adjusted: false
+        publication_lag_days: 1
+        min_value: -2
+        max_value: 25
+
+  - name: Fed Policy
+    series:
+      - code: FEDFUNDS
+        name: Effective Federal Funds Rate
+        frequency: M
+        units: percent
+        seasonally_adjusted: false
+        publication_lag_days: 32   # month-start dated; published early next month
+        min_value: 0
+        max_value: 25
+      - code: SOFR
+        name: Secured Overnight Financing Rate
+        frequency: D
+        units: percent
+        seasonally_adjusted: false
+        publication_lag_days: 1
+        min_value: -1
+        max_value: 25
+
+  - name: Inflation
+    series:
+      - code: CPIAUCSL
+        name: CPI All Urban Consumers (All Items)
+        frequency: M
+        units: index
+        seasonally_adjusted: true
+        publication_lag_days: 45   # month-start dated; released mid next month
+        min_value: 0
+        max_value: 1000
+      - code: CPILFESL
+        name: Core CPI (All Items Less Food and Energy)
+        frequency: M
+        units: index
+        seasonally_adjusted: true
+        publication_lag_days: 45
+        min_value: 0
+        max_value: 1000
+      - code: PPIACO
+        name: Producer Price Index (All Commodities)
+        frequency: M
+        units: index
+        seasonally_adjusted: false
+        publication_lag_days: 45
+        min_value: 0
+        max_value: 1000
+
+  - name: Employment
+    series:
+      - code: PAYEMS
+        name: Total Nonfarm Payrolls
+        frequency: M
+        units: thousands of persons
+        seasonally_adjusted: true
+        publication_lag_days: 35   # first Friday of the following month
+        min_value: 0
+        max_value: 1000000
+      - code: UNRATE
+        name: Unemployment Rate
+        frequency: M
+        units: percent
+        seasonally_adjusted: true
+        publication_lag_days: 35
+        min_value: 0
+        max_value: 30
+
+  - name: Economic Growth
+    series:
+      - code: GDPC1
+        name: Real Gross Domestic Product
+        frequency: Q
+        units: billions of chained 2017 dollars
+        seasonally_adjusted: true
+        publication_lag_days: 120  # quarter-start dated; advance estimate ~1 month after quarter end
+        min_value: 0
+        max_value: 100000
+      - code: GDP
+        name: Gross Domestic Product (Nominal)
+        frequency: Q
+        units: billions of dollars
+        seasonally_adjusted: true
+        publication_lag_days: 120
+        min_value: 0
+        max_value: 100000
+
+  - name: Consumer
+    series:
+      - code: UMCSENT
+        name: University of Michigan Consumer Sentiment
+        frequency: M
+        units: index
+        seasonally_adjusted: false
+        publication_lag_days: 30   # final reading released end of the reference month
+        min_value: 0
+        max_value: 150
+      - code: RSAFS
+        name: Advance Retail Sales (Retail and Food Services)
+        frequency: M
+        units: millions of dollars
+        seasonally_adjusted: true
+        publication_lag_days: 45
+        min_value: 0
+        max_value: 2000000
+
+  - name: Housing
+    series:
+      - code: HOUST
+        name: Housing Starts
+        frequency: M
+        units: thousands of units (SAAR)
+        seasonally_adjusted: true
+        publication_lag_days: 48
+        min_value: 0
+        max_value: 5000
+      - code: PERMIT
+        name: Building Permits
+        frequency: M
+        units: thousands of units (SAAR)
+        seasonally_adjusted: true
+        publication_lag_days: 48
+        min_value: 0
+        max_value: 5000
+
+  - name: Volatility
+    series:
+      - code: VIXCLS
+        name: CBOE Volatility Index (VIX) Close
+        frequency: D
+        units: index
+        seasonally_adjusted: false
+        publication_lag_days: 1
+        min_value: 0
+        max_value: 150
