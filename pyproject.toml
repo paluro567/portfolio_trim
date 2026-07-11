@@ -51,6 +51,7 @@ select = ["E", "W", "F", "I", "B", "UP", "N"]
 # by the test parameters that request them — that's how fixtures work.
 "tests/integration/test_research_engine.py" = ["F811"]
 "tests/integration/test_intelligence_rates.py" = ["F811"]
+"tests/integration/test_intelligence_sector.py" = ["F811"]
 
 [tool.black]
 line-length = 100

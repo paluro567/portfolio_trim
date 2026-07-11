@@ -112,6 +112,30 @@ def test_relative_return_without_sector_etf_is_absent() -> None:
     assert series.isna().all()
 
 
+def test_relative_return_accel_is_change_in_relative_return() -> None:
+    from mip.features.relative import RelativeReturnAccel
+
+    index = business_days(12)
+    rel = pd.Series([float(i) / 100 for i in range(12)], index=index)
+    ctx = FeatureContext(dates=index, features={"rel_ret_spy_5d": rel})
+
+    series = RelativeReturnAccel(5).compute(ctx)
+
+    assert series.iloc[:5].isna().all()  # needs a full shift window
+    assert series.iloc[5] == pytest.approx(rel.iloc[5] - rel.iloc[0])
+    assert series.iloc[-1] == pytest.approx(rel.iloc[-1] - rel.iloc[-6])
+
+
+def test_relative_return_accel_propagates_missing_upstream() -> None:
+    from mip.features.relative import RelativeReturnAccel
+
+    index = business_days(12)
+    rel = pd.Series(float("nan"), index=index)  # no benchmark -> absent upstream
+    ctx = FeatureContext(dates=index, features={"rel_ret_spy_5d": rel})
+
+    assert RelativeReturnAccel(5).compute(ctx).isna().all()
+
+
 def test_earnings_days_since_and_until() -> None:
     from mip.features.earnings import DaysSinceEarnings, DaysUntilEarnings
 

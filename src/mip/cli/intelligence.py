@@ -1,6 +1,7 @@
 """`mip intelligence` — run intelligence models over the platform data."""
 
 import json as json_lib
+from collections.abc import Callable
 
 import typer
 
@@ -14,17 +15,16 @@ def _pct(value: float | None) -> str:
     return f"{value * 100:+.2f}%" if value is not None else "      —"
 
 
-@app.command("rates")
-def rates(
-    symbols: list[str] = typer.Argument(None, help="Symbols to evaluate."),
-    all_instruments: bool = typer.Option(False, "--all", help="Whole universe."),
-    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+def _run_model(
+    make_model: Callable,
+    symbols: list[str],
+    all_instruments: bool,
+    as_json: bool,
+    regimes_label: str,
 ) -> None:
-    """Interest Rate Sensitivity: is the current rate environment
-    historically favorable for these symbols?"""
+    """Shared runner: resolve targets, evaluate, print table or JSON."""
     from mip.core.exceptions import ConfigurationError
     from mip.domain.enums import InstrumentType
-    from mip.models.rates import InterestRateModel
     from mip.repositories.instruments import InstrumentRepository
 
     if bool(symbols) == all_instruments:
@@ -32,6 +32,7 @@ def rates(
         raise typer.Exit(2)
 
     factory = open_session_factory()
+    failed = False
     with session_scope(factory) as session:
         if all_instruments:
             targets = [
@@ -42,9 +43,8 @@ def rates(
         else:
             targets = [s.strip().upper() for s in symbols]
 
-        model = InterestRateModel(session)
+        model = make_model(session)
         payload = []
-        failed = False
         for symbol in targets:
             try:
                 scores = model.evaluate(symbol)
@@ -55,18 +55,44 @@ def rates(
             if as_json:
                 payload.append({"symbol": symbol, "scores": [s.to_dict() for s in scores]})
             else:
-                _print_scores(symbol, scores)
+                _print_scores(symbol, scores, regimes_label)
         if as_json:
             typer.echo(json_lib.dumps(payload, indent=2))
     if failed:
         raise typer.Exit(1)
 
 
-def _print_scores(symbol: str, scores: list) -> None:
+@app.command("rates")
+def rates(
+    symbols: list[str] = typer.Argument(None, help="Symbols to evaluate."),
+    all_instruments: bool = typer.Option(False, "--all", help="Whole universe."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Interest Rate Sensitivity: is the current rate environment
+    historically favorable for these symbols?"""
+    from mip.models.rates import InterestRateModel
+
+    _run_model(InterestRateModel, symbols, all_instruments, as_json, "active rate regimes")
+
+
+@app.command("sector")
+def sector(
+    symbols: list[str] = typer.Argument(None, help="Symbols to evaluate."),
+    all_instruments: bool = typer.Option(False, "--all", help="Whole universe."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Sector Rotation: is the current sector environment historically
+    favorable for these symbols?"""
+    from mip.models.sector import SectorRotationModel
+
+    _run_model(SectorRotationModel, symbols, all_instruments, as_json, "active sector regimes")
+
+
+def _print_scores(symbol: str, scores: list, regimes_label: str) -> None:
     first = scores[0]
     typer.echo(f"\n{symbol} — {first.model} v{first.model_version} (as of {first.as_of})")
     regimes = ", ".join(first.active_regimes) if first.active_regimes else "none"
-    typer.echo(f"active rate regimes: {regimes}")
+    typer.echo(f"{regimes_label}: {regimes}")
     typer.echo(f"{'HZN':>4} {'SCORE':>6} {'CONF':>5} {'EXP_RET':>8} {'HIT':>5} {'N':>4}")
     for s in scores:
         hit = f"{s.historical_hit_rate * 100:.0f}%" if s.historical_hit_rate is not None else "—"

@@ -37,7 +37,7 @@ from mip.features.price import (
     Volatility,
 )
 from mip.features.regime import RegimeBull, RegimeHighVol, RegimeRates
-from mip.features.relative import RelativeReturn
+from mip.features.relative import RelativeReturn, RelativeReturnAccel
 
 
 def build_registry() -> list[FeatureCalculator]:
@@ -59,10 +59,15 @@ def build_registry() -> list[FeatureCalculator]:
         Distance52Week("high"),
         Distance52Week("low"),
         # -- relative performance ---------------------------------------
+        RelativeReturn("SPY", 5),
         RelativeReturn("SPY", 21),
         RelativeReturn("SPY", 63),
+        RelativeReturn("SPY", 126),
+        RelativeReturn("sector", 5),
         RelativeReturn("sector", 21),
         RelativeReturn("sector", 63),
+        RelativeReturn("sector", 126),
+        RelativeReturnAccel(21),
         # -- macro (market scope) ----------------------------------------
         MacroChange(
             "dgs10_chg_5d", "DGS10", 5, "10y Treasury yield change over 5 observations (pp)"

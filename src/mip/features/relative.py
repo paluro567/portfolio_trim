@@ -38,3 +38,32 @@ class RelativeReturn(FeatureCalculator):
 
         bench = sessions_return(frame["adj_close"], window).reindex(own.index)
         return own - bench
+
+
+class RelativeReturnAccel(FeatureCalculator):
+    """Momentum acceleration: how the N-session relative return vs SPY has
+    changed since N sessions earlier. Positive = relative momentum building,
+    negative = fading. Derived from rel_ret_spy_{N}d, so PIT correctness is
+    inherited (adjusted closes only, no external data)."""
+
+    def __init__(self, window: int) -> None:
+        super().__init__(
+            FeatureSpec(
+                name=f"rel_ret_spy_accel_{window}d",
+                version=1,
+                scope=FeatureScope.INSTRUMENT,
+                description=(
+                    f"Change in the {window}-session relative return vs SPY "
+                    f"compared with {window} sessions earlier (momentum acceleration)"
+                ),
+                params={"benchmark": "SPY", "window": window, "price": "adj_close"},
+                uses_adjusted_prices=True,
+                lookback_sessions=2 * window + 5,
+                depends_on=(f"rel_ret_spy_{window}d",),
+            )
+        )
+
+    def compute(self, ctx: FeatureContext) -> pd.Series:
+        window = int(self.spec.params["window"])
+        rel = ctx.features[f"rel_ret_spy_{window}d"]
+        return rel - rel.shift(window)
