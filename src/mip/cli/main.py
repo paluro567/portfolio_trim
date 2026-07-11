@@ -15,6 +15,7 @@ from mip.cli.calendar import app as calendar_app
 from mip.cli.earnings import app as earnings_app
 from mip.cli.features import app as features_app
 from mip.cli.ingest import app as ingest_app
+from mip.cli.intelligence import app as intelligence_app
 from mip.cli.macro import app as macro_app
 from mip.cli.quality import app as quality_app
 from mip.cli.research import app as research_app
@@ -36,6 +37,7 @@ app.add_typer(macro_app, name="macro")
 app.add_typer(earnings_app, name="earnings")
 app.add_typer(features_app, name="features")
 app.add_typer(research_app, name="research")
+app.add_typer(intelligence_app, name="intelligence")
 app.add_typer(runs_app, name="runs")
 app.add_typer(quality_app, name="quality")
 

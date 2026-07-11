@@ -74,7 +74,17 @@ def build_registry() -> list[FeatureCalculator]:
             "dgs10_chg_63d", "DGS10", 63, "10y Treasury yield change over 63 observations (pp)"
         ),
         MacroChange(
+            "dgs10_chg_126d", "DGS10", 126, "10y Treasury yield change over 126 observations (pp)"
+        ),
+        MacroChange("dgs2_chg_5d", "DGS2", 5, "2y Treasury yield change over 5 observations (pp)"),
+        MacroChange(
             "dgs2_chg_21d", "DGS2", 21, "2y Treasury yield change over 21 observations (pp)"
+        ),
+        MacroChange(
+            "dgs2_chg_63d", "DGS2", 63, "2y Treasury yield change over 63 observations (pp)"
+        ),
+        MacroChange(
+            "dgs2_chg_126d", "DGS2", 126, "2y Treasury yield change over 126 observations (pp)"
         ),
         CurveSlope("curve_slope_10y2y", "DGS10", "DGS2", "10y minus 2y Treasury yield (pp)"),
         MacroLevel("fedfunds_level", "FEDFUNDS", "Effective Fed Funds rate (%, monthly)"),
