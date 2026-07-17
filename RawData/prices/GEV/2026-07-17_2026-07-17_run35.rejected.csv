@@ -1,0 +1,2 @@
+price_date,open,high,low,close,adj_close,volume,rule
+2026-07-17,1034.989990234375,1003.0,984.9299926757812,998.0,998.0,215109,ohlc_incoherent

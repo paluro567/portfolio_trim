@@ -32,7 +32,11 @@ def configure_logging(log_format: Literal["console", "json"] = "console") -> Non
         processors=[*shared_processors, renderer],
         wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
         logger_factory=structlog.PrintLoggerFactory(sys.stderr),
-        cache_logger_on_first_use=True,
+        # Never cache: the CLI reconfigures per invocation (and tests
+        # capture/replace stderr); a cached logger would keep writing
+        # to the stream that was current at its FIRST use — including
+        # closed CliRunner buffers. Log volume is tiny; correctness wins.
+        cache_logger_on_first_use=False,
     )
 
 

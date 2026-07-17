@@ -112,6 +112,82 @@ def test_relative_return_without_sector_etf_is_absent() -> None:
     assert series.isna().all()
 
 
+def test_market_feature_change_is_delta_vs_window_earlier() -> None:
+    from mip.features.macro import MarketFeatureChange
+
+    index = business_days(8)
+    slope = pd.Series([1.0, 0.8, 0.6, 0.4, 0.2, 0.0, -0.2, -0.4], index=index)
+    ctx = FeatureContext(dates=index, features={"curve_slope_10y2y": slope})
+
+    series = MarketFeatureChange("curve_slope_10y2y", 5, "test").compute(ctx)
+
+    assert series.iloc[:5].isna().all()
+    assert series.iloc[5] == pytest.approx(-1.0)
+    assert series.iloc[-1] == pytest.approx(-1.0)
+
+
+def test_overnight_gap_uses_raw_open_vs_prior_close() -> None:
+    from mip.features.price import OvernightGap
+
+    index = business_days(3)
+    frame = price_frame([100.0, 100.0, 100.0], index)
+    frame["open"] = [100.0, 105.0, 98.0]
+    frame["adj_close"] = frame["close"] * 0.5  # adjusted differs: must be ignored
+
+    series = OvernightGap().compute(ctx_for(frame))
+
+    assert np.isnan(series.iloc[0])
+    assert series.iloc[1] == pytest.approx(0.05)
+    assert series.iloc[2] == pytest.approx(-0.02)
+
+
+def test_feature_change_is_delta_vs_window_earlier() -> None:
+    from mip.features.fundamental import FeatureChange
+
+    index = business_days(8)
+    pe = pd.Series([20.0, 21, 22, 23, 24, 25, 26, 27], index=index)
+    ctx = FeatureContext(dates=index, features={"pe_trailing": pe})
+
+    series = FeatureChange("pe_trailing", 5, "test").compute(ctx)
+
+    assert series.iloc[:5].isna().all()  # absent until a full window exists
+    assert series.iloc[5] == pytest.approx(5.0)
+    assert series.iloc[-1] == pytest.approx(5.0)
+
+
+def test_volatility_ratio_is_fast_over_slow() -> None:
+    from mip.features.price import VolatilityRatio
+
+    index = business_days(4)
+    ctx = FeatureContext(
+        dates=index,
+        features={
+            "vol_21d": pd.Series([0.30, 0.20, 0.40, float("nan")], index=index),
+            "vol_63d": pd.Series([0.20, 0.20, 0.0, 0.20], index=index),
+        },
+    )
+    series = VolatilityRatio(21, 63).compute(ctx)
+
+    assert series.iloc[0] == pytest.approx(0.5)  # 0.30/0.20 - 1
+    assert series.iloc[1] == pytest.approx(0.0)
+    assert np.isnan(series.iloc[2])  # zero slow vol -> absent, never inf
+    assert np.isnan(series.iloc[3])  # missing fast vol propagates
+
+
+def test_ma_spread_change_is_delta_vs_window_earlier() -> None:
+    from mip.features.price import MASpreadChange
+
+    index = business_days(8)
+    spread = pd.Series([float(i) / 100 for i in range(8)], index=index)
+    ctx = FeatureContext(dates=index, features={"ma50_ma200_spread": spread})
+
+    series = MASpreadChange(50, 200, 5).compute(ctx)
+
+    assert series.iloc[:5].isna().all()
+    assert series.iloc[5] == pytest.approx(spread.iloc[5] - spread.iloc[0])
+    assert series.iloc[-1] == pytest.approx(spread.iloc[-1] - spread.iloc[-6])
+
+
 def test_relative_return_accel_is_change_in_relative_return() -> None:
     from mip.features.relative import RelativeReturnAccel
 

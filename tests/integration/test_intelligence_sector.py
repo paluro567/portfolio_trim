@@ -320,6 +320,33 @@ def test_unclassified_instrument_is_neutral_with_explanation(sector_env) -> None
         assert "no sector→ETF mapping" in s.explanation
 
 
+def test_as_of_before_stored_features_is_neutral(sector_env) -> None:
+    """Regression twin of the rates fix: predating all features must yield
+    the standard neutral output, not a crash or ConfigurationError."""
+    scores = evaluate(sector_env, as_of=date(2023, 6, 1))
+    assert [s.horizon for s in scores] == list(HORIZONS)
+    for s in scores:
+        assert s.score == 50.0 and s.confidence == 0.0
+        assert "insufficient data" in s.explanation.lower()
+
+
+def test_diagnostics_expose_overlap_and_saturation(sector_env) -> None:
+    scores = {s.horizon: s for s in evaluate(sector_env)}
+    s = scores["1m"]
+    diag = s.diagnostics
+    assert diag is not None
+    assert diag.active_regimes == len(s.active_regimes)
+    assert 1 <= diag.evidence_studies <= diag.active_regimes
+    # active regimes fire around the same phase turns: overlap must be
+    # measured as real, positive correlation — not assumed away
+    assert 0.0 < diag.mean_cross_correlation <= 1.0
+    assert abs(diag.z_clipped) <= 4.0
+    assert diag.saturated == (abs(diag.z_raw) > 4.0)
+    assert s.to_dict()["diagnostics"]["saturated"] == diag.saturated
+    if diag.saturated:
+        assert "Score saturated" in s.explanation
+
+
 def test_backfill_does_not_alter_existing_feature_values(
     migrated_schema, session_factory, test_database_url, tmp_path
 ) -> None:

@@ -107,6 +107,84 @@ class Volatility(FeatureCalculator):
         return returns.rolling(window).std() * float(np.sqrt(252))
 
 
+class OvernightGap(FeatureCalculator):
+    """Opening gap: today's raw open vs yesterday's raw close, minus 1.
+    Raw prices (what an observer saw); the earnings model uses it to
+    classify post-report gap reactions."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            FeatureSpec(
+                name="gap_1d",
+                version=1,
+                scope=FeatureScope.INSTRUMENT,
+                description="Overnight gap: raw open vs previous raw close, minus 1",
+                params={"price": "raw_open_close"},
+                uses_adjusted_prices=False,
+                lookback_sessions=5,
+            )
+        )
+
+    def compute(self, ctx: FeatureContext) -> pd.Series:
+        return ctx.prices["open"] / ctx.prices["close"].shift(1) - 1.0
+
+
+class VolatilityRatio(FeatureCalculator):
+    """Short-window volatility relative to a longer window, minus 1:
+    positive = volatility expanding, negative = contracting. Scale-free,
+    so one threshold convention works across instruments. Derived from the
+    registered vol features, so PIT correctness is inherited."""
+
+    def __init__(self, fast: int = 21, slow: int = 63) -> None:
+        super().__init__(
+            FeatureSpec(
+                name=f"vol_ratio_{fast}_{slow}",
+                version=1,
+                scope=FeatureScope.INSTRUMENT,
+                description=(
+                    f"{fast}-session volatility over {slow}-session volatility, minus 1 "
+                    "(positive = volatility expanding)"
+                ),
+                params={"fast": fast, "slow": slow, "price": "adj_close"},
+                uses_adjusted_prices=True,
+                lookback_sessions=slow + 10,
+                depends_on=(f"vol_{fast}d", f"vol_{slow}d"),
+            )
+        )
+
+    def compute(self, ctx: FeatureContext) -> pd.Series:
+        fast = ctx.features[f"vol_{int(self.spec.params['fast'])}d"]
+        slow = ctx.features[f"vol_{int(self.spec.params['slow'])}d"]
+        return (fast / slow - 1.0).where(slow > 0)
+
+
+class MASpreadChange(FeatureCalculator):
+    """Change in the MA spread vs `window` sessions earlier: positive =
+    the bullish cross is widening, negative = narrowing. Derived from the
+    registered spread feature, so PIT correctness is inherited."""
+
+    def __init__(self, fast: int = 50, slow: int = 200, window: int = 21) -> None:
+        super().__init__(
+            FeatureSpec(
+                name=f"ma{fast}_ma{slow}_spread_chg_{window}d",
+                version=1,
+                scope=FeatureScope.INSTRUMENT,
+                description=(
+                    f"Change in the {fast}/{slow}-session MA spread vs {window} sessions "
+                    "earlier (positive = trend cross widening)"
+                ),
+                params={"fast": fast, "slow": slow, "window": window, "price": "adj_close"},
+                uses_adjusted_prices=True,
+                lookback_sessions=slow + window + 10,
+                depends_on=(f"ma{fast}_ma{slow}_spread",),
+            )
+        )
+
+    def compute(self, ctx: FeatureContext) -> pd.Series:
+        spread = ctx.features[f"ma{self.spec.params['fast']}_ma{self.spec.params['slow']}_spread"]
+        return spread - spread.shift(int(self.spec.params["window"]))
+
+
 class ATRPercent(FeatureCalculator):
     def __init__(self, window: int = 14) -> None:
         super().__init__(

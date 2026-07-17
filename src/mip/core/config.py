@@ -40,6 +40,16 @@ class Settings(BaseSettings):
     # price/macro revisions propagate into stored features.
     feature_rebuild_overlap_sessions: int = 30
 
+    # Daily update orchestrator
+    default_portfolio: str = "Peter Real Portfolio"
+    report_root: Path = Path("data/reports")
+    market_close_buffer_minutes: int = 90  # NYSE close + provider availability
+    update_macro_daily: bool = True
+    update_fundamentals_daily: bool = True
+    update_earnings_daily: bool = True
+    stage_retry_limit: int = 1  # extra attempts per stage on transient errors
+    update_lock_timeout_seconds: int = 0  # 0 = fail immediately if locked
+
 
 def get_settings(env_file: str | Path | None = ".env") -> Settings:
     """Load settings, converting validation failures into a readable error."""

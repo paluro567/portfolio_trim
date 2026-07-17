@@ -122,6 +122,29 @@ class YoYChange(FeatureCalculator):
         return align_availability(frame, ctx.dates)
 
 
+class MarketFeatureChange(FeatureCalculator):
+    """Change in an upstream MARKET feature vs `window` trading sessions
+    earlier (e.g. yield-curve steepening/flattening). PIT correctness is
+    inherited from the upstream feature (publication lags already applied)."""
+
+    def __init__(self, source: str, window: int, description: str) -> None:
+        super().__init__(
+            FeatureSpec(
+                name=f"{source}_chg_{window}d",
+                version=1,
+                scope=FeatureScope.MARKET,
+                description=description,
+                params={"source": source, "window": window},
+                lookback_sessions=window + 5,
+                depends_on=(source,),
+            )
+        )
+
+    def compute(self, ctx: FeatureContext) -> pd.Series:
+        source = ctx.features[str(self.spec.params["source"])]
+        return source - source.shift(int(self.spec.params["window"]))
+
+
 class MacroPercentile(FeatureCalculator):
     """Rolling percentile of the latest observation within its window."""
 

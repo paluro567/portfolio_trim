@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Daily Update Orchestrator — macOS launchd template (NOT installed
+     automatically). Runs `mip update` once each weekday at 17:45 local
+     (after NYSE close 16:00 ET plus the data-availability buffer; the
+     orchestrator itself resolves the latest COMPLETED session, so
+     weekend/holiday firings are harmless no-ops and a too-early firing
+     simply updates yesterday's session).
+
+     Install (after reviewing paths):
+       cp docs/launchd.mip-update.plist.example \
+          ~/Library/LaunchAgents/com.mip.update.plist
+       launchctl load ~/Library/LaunchAgents/com.mip.update.plist
+
+     Logs go to data/reports/launchd-update.log; the run manifest and
+     reports land under data/reports/YYYY-MM-DD/. Postgres.app must be
+     running (add it to Login Items). -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mip.update</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/USERNAME/Desktop/stock_scoring</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/uv</string>
+        <string>run</string>
+        <string>mip</string>
+        <string>update</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>17</integer><key>Minute</key><integer>45</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/USERNAME/Desktop/stock_scoring/data/reports/launchd-update.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/USERNAME/Desktop/stock_scoring/data/reports/launchd-update.log</string>
+</dict>
+</plist>

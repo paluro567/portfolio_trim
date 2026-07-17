@@ -1,0 +1,2 @@
+price_date,open,high,low,close,adj_close,volume,rule
+2021-05-05,21.219999313354492,23.8799991607666,20.559999465942383,23.0,23.0,14990200,return_jump_no_corp_action

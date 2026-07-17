@@ -16,6 +16,7 @@ from mip.features.earnings import (
 )
 from mip.features.fundamental import (
     EpsGrowthYoY,
+    FeatureChange,
     FundamentalField,
     PriceToSales,
     RevenueGrowthYoY,
@@ -25,6 +26,7 @@ from mip.features.macro import (
     MacroChange,
     MacroLevel,
     MacroPercentile,
+    MarketFeatureChange,
     YoYChange,
 )
 from mip.features.price import (
@@ -32,9 +34,12 @@ from mip.features.price import (
     Distance52Week,
     LogReturn1d,
     MASpread,
+    MASpreadChange,
+    OvernightGap,
     PriceToMA,
     RollingReturn,
     Volatility,
+    VolatilityRatio,
 )
 from mip.features.regime import RegimeBull, RegimeHighVol, RegimeRates
 from mip.features.relative import RelativeReturn, RelativeReturnAccel
@@ -50,11 +55,14 @@ def build_registry() -> list[FeatureCalculator]:
         RollingReturn(126),
         RollingReturn(252),
         LogReturn1d(),
+        OvernightGap(),
         PriceToMA(50),
         PriceToMA(200),
         MASpread(50, 200),
+        MASpreadChange(50, 200, 21),
         Volatility(21),
         Volatility(63),
+        VolatilityRatio(21, 63),
         ATRPercent(14),
         Distance52Week("high"),
         Distance52Week("low"),
@@ -92,7 +100,27 @@ def build_registry() -> list[FeatureCalculator]:
             "dgs2_chg_126d", "DGS2", 126, "2y Treasury yield change over 126 observations (pp)"
         ),
         CurveSlope("curve_slope_10y2y", "DGS10", "DGS2", "10y minus 2y Treasury yield (pp)"),
+        MarketFeatureChange(
+            "curve_slope_10y2y", 63, "Change in the 10y-2y curve slope over 63 sessions (pp)"
+        ),
         MacroLevel("fedfunds_level", "FEDFUNDS", "Effective Fed Funds rate (%, monthly)"),
+        MacroChange(
+            "fedfunds_chg_6m", "FEDFUNDS", 6, "Fed Funds rate change over 6 monthly observations"
+        ),
+        MacroChange(
+            "unrate_chg_6m", "UNRATE", 6, "Unemployment-rate change over 6 monthly observations"
+        ),
+        MacroChange(
+            "umcsent_chg_6m",
+            "UMCSENT",
+            6,
+            "Consumer-sentiment change over 6 monthly observations",
+        ),
+        MacroChange("vix_chg_21d", "VIXCLS", 21, "VIX change over 21 observations"),
+        YoYChange("payems_yoy", "PAYEMS", "Nonfarm payrolls year-over-year growth"),
+        YoYChange("gdpc1_yoy", "GDPC1", "Real GDP year-over-year growth (quarterly, lagged)"),
+        YoYChange("houst_yoy", "HOUST", "Housing starts year-over-year growth"),
+        YoYChange("rsafs_yoy", "RSAFS", "Retail sales year-over-year growth"),
         YoYChange("cpi_yoy", "CPIAUCSL", "CPI year-over-year change (inflation trend)"),
         YoYChange(
             "cpi_yoy_accel",
@@ -116,6 +144,16 @@ def build_registry() -> list[FeatureCalculator]:
         ),
         RevenueGrowthYoY(),
         EpsGrowthYoY(),
+        FundamentalField("profit_margin", "profit_margin", "Net profit margin (latest snapshot)"),
+        FundamentalField(
+            "debt_to_equity", "debt_to_equity", "Debt-to-equity ratio (latest snapshot)"
+        ),
+        FeatureChange(
+            "pe_trailing", 63, "Change in trailing P/E vs 63 sessions earlier (multiple trend)"
+        ),
+        FeatureChange(
+            "pe_forward", 63, "Change in forward P/E vs 63 sessions earlier (multiple trend)"
+        ),
         # -- earnings proximity ----------------------------------------------
         DaysSinceEarnings(),
         DaysUntilEarnings(),

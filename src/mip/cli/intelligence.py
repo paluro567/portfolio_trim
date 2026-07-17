@@ -88,6 +88,73 @@ def sector(
     _run_model(SectorRotationModel, symbols, all_instruments, as_json, "active sector regimes")
 
 
+@app.command("momentum")
+def momentum(
+    symbols: list[str] = typer.Argument(None, help="Symbols to evaluate."),
+    all_instruments: bool = typer.Option(False, "--all", help="Whole universe."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Momentum Exhaustion: does the stock's current momentum/extension/
+    volatility behavior historically lead to continuation or exhaustion?"""
+    from mip.models.momentum import MomentumExhaustionModel
+
+    _run_model(
+        MomentumExhaustionModel, symbols, all_instruments, as_json, "active momentum regimes"
+    )
+
+
+@app.command("valuation")
+def valuation(
+    symbols: list[str] = typer.Argument(None, help="Symbols to evaluate."),
+    all_instruments: bool = typer.Option(False, "--all", help="Whole universe."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Valuation: has this stock's current valuation, relative to its own
+    point-in-time history, historically been favorable or unfavorable?"""
+    from mip.models.valuation import ValuationModel
+
+    _run_model(ValuationModel, symbols, all_instruments, as_json, "active valuation regimes")
+
+
+@app.command("earnings")
+def earnings(
+    symbols: list[str] = typer.Argument(None, help="Symbols to evaluate."),
+    all_instruments: bool = typer.Option(False, "--all", help="Whole universe."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Earnings Behavior: given everything known immediately after an
+    earnings event, how has this stock historically behaved next?"""
+    from mip.models.earnings import EarningsBehaviorModel
+
+    _run_model(EarningsBehaviorModel, symbols, all_instruments, as_json, "active earnings regimes")
+
+
+@app.command("macro")
+def macro(
+    symbols: list[str] = typer.Argument(None, help="Symbols to evaluate."),
+    all_instruments: bool = typer.Option(False, "--all", help="Whole universe."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Macro Regime: given today's macroeconomic environment, how has this
+    stock historically behaved in comparable environments?"""
+    from mip.models.macro import MacroRegimeModel
+
+    _run_model(MacroRegimeModel, symbols, all_instruments, as_json, "active macro regimes")
+
+
+@app.command("relative")
+def relative(
+    symbols: list[str] = typer.Argument(None, help="Symbols to evaluate."),
+    all_instruments: bool = typer.Option(False, "--all", help="Whole universe."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable output."),
+) -> None:
+    """Relative Strength: how strong is this stock vs everything around it,
+    and has similar leadership historically persisted or reversed?"""
+    from mip.models.relative import RelativeStrengthModel
+
+    _run_model(RelativeStrengthModel, symbols, all_instruments, as_json, "active strength regimes")
+
+
 def _print_scores(symbol: str, scores: list, regimes_label: str) -> None:
     first = scores[0]
     typer.echo(f"\n{symbol} — {first.model} v{first.model_version} (as of {first.as_of})")

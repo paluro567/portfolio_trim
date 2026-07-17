@@ -22,6 +22,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -30,18 +31,22 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from mip.domain.enums import (
     CorporateActionType,
+    CostBasisMethod,
     FeatureScope,
+    GainTerm,
     InstrumentType,
     IssueSeverity,
     IssueStatus,
     RunStatus,
     RunType,
+    TxnType,
 )
 
 
@@ -384,3 +389,186 @@ class FeatureStoreMarketDaily(Base):
     computed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class Portfolio(Base):
+    """Portfolio header (§4.7). The transaction ledger is the SOURCE OF
+    TRUTH (D14); lots, closures, and snapshots are derived projections."""
+
+    __tablename__ = "portfolios"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(Text, unique=True)
+    base_currency: Mapped[str] = mapped_column(Text, server_default="USD")
+    cost_basis_method: Mapped[CostBasisMethod] = mapped_column(
+        _text_enum(CostBasisMethod, "cost_basis_method"), server_default="FIFO"
+    )
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Transaction(Base):
+    """APPEND-ONLY ledger (D14): corrections are reversing entries, never
+    UPDATEs. total_amount is the signed cash impact for cash-moving types;
+    for non-cash position movements (opening_balance, transfer_in/out) it
+    carries the cost basis, with txn_type marking the row non-cash.
+    ingestion_run_id is the declared minimal amendment resolving §4.7's
+    omission against decision D7 (every fact row carries run lineage)."""
+
+    __tablename__ = "transactions"
+    __table_args__ = (
+        UniqueConstraint("portfolio_id", "external_id"),
+        Index("ix_txn_portfolio_date", "portfolio_id", "trade_date"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolios.id"))
+    instrument_id: Mapped[int | None] = mapped_column(ForeignKey("instruments.id"))
+    txn_type: Mapped[TxnType] = mapped_column(_text_enum(TxnType, "txn_type"))
+    trade_date: Mapped[date] = mapped_column(Date)
+    quantity: Mapped[Decimal | None] = mapped_column(Numeric(20, 8))
+    price: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    fees: Mapped[Decimal] = mapped_column(Numeric(18, 6), server_default="0")
+    total_amount: Mapped[Decimal] = mapped_column(Numeric(20, 6))
+    external_id: Mapped[str | None] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    ingestion_run_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ingestion_runs.id")
+    )
+
+    instrument: Mapped["Instrument | None"] = relationship()
+
+
+class Lot(Base):
+    """Derived tax lot; rebuildable from the ledger at any time (D14)."""
+
+    __tablename__ = "lots"
+    __table_args__ = (
+        Index(
+            "ix_lots_portfolio_instr",
+            "portfolio_id",
+            "instrument_id",
+            postgresql_where=text("NOT is_closed"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolios.id"))
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"))
+    open_transaction_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("transactions.id"))
+    open_date: Mapped[date] = mapped_column(Date)
+    quantity_opened: Mapped[Decimal] = mapped_column(Numeric(20, 8))
+    quantity_remaining: Mapped[Decimal] = mapped_column(Numeric(20, 8))
+    cost_basis_per_share: Mapped[Decimal] = mapped_column(Numeric(18, 6))
+    is_closed: Mapped[bool] = mapped_column(Boolean, server_default="false")
+
+
+class LotClosure(Base):
+    """Realized gains at the lot-slice level; derived, rebuildable."""
+
+    __tablename__ = "lot_closures"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    lot_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("lots.id"))
+    close_transaction_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("transactions.id"))
+    close_date: Mapped[date] = mapped_column(Date)
+    quantity_closed: Mapped[Decimal] = mapped_column(Numeric(20, 8))
+    proceeds: Mapped[Decimal] = mapped_column(Numeric(20, 6))
+    cost_basis: Mapped[Decimal] = mapped_column(Numeric(20, 6))
+    realized_gain: Mapped[Decimal] = mapped_column(Numeric(20, 6))
+    holding_period_days: Mapped[int] = mapped_column(Integer)
+    term: Mapped[GainTerm] = mapped_column(_text_enum(GainTerm, "gain_term"))
+
+
+class PositionSnapshot(Base):
+    """Derived daily position projection; rebuildable from ledger + prices."""
+
+    __tablename__ = "position_snapshots"
+
+    portfolio_id: Mapped[int] = mapped_column(ForeignKey("portfolios.id"), primary_key=True)
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"), primary_key=True)
+    snapshot_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(20, 8))
+    cost_basis: Mapped[Decimal] = mapped_column(Numeric(20, 6))
+    market_value: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
+    unrealized_gain: Mapped[Decimal | None] = mapped_column(Numeric(20, 6))
+    weight: Mapped[Decimal | None] = mapped_column(Numeric(10, 8))
+    computed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+# -- Phase: Prediction Archive & Outcome Evaluation (ROADMAP Phase 10 ----
+# "trim-score output tables") ---------------------------------------------
+
+
+class Prediction(Base):
+    """One archived trim prediction — IMMUTABLE. Rows are only ever
+    inserted (ON CONFLICT DO NOTHING on the natural key); no code path
+    updates or deletes them. Every prediction is permanent evidence."""
+
+    __tablename__ = "predictions"
+    __table_args__ = (
+        UniqueConstraint(
+            "instrument_id",
+            "portfolio_key",
+            "as_of",
+            "horizon",
+            "trim_engine_version",
+            name="uq_predictions_identity",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    instrument_id: Mapped[int] = mapped_column(ForeignKey("instruments.id"))
+    portfolio_key: Mapped[str] = mapped_column(Text, default="", server_default="")
+    as_of: Mapped[date] = mapped_column(Date)
+    horizon: Mapped[str] = mapped_column(Text)
+    horizon_sessions: Mapped[int] = mapped_column(Integer)
+    trim_score: Mapped[float] = mapped_column(Float)
+    evidence_trim_score: Mapped[float] = mapped_column(Float)
+    portfolio_adjustment: Mapped[float] = mapped_column(Float)
+    confidence: Mapped[float] = mapped_column(Float)
+    recommendation_label: Mapped[str] = mapped_column(Text)
+    expected_return: Mapped[float | None] = mapped_column(Float)
+    expected_excess_return: Mapped[float | None] = mapped_column(Float)
+    baseline_return: Mapped[float | None] = mapped_column(Float)
+    data_quality_label: Mapped[str] = mapped_column(Text)
+    contradictory_evidence: Mapped[float] = mapped_column(Float)
+    effective_sample_size: Mapped[float] = mapped_column(Float)
+    participating_models: Mapped[list | None] = mapped_column(JSONB)
+    primary_trim_drivers: Mapped[list | None] = mapped_column(JSONB)
+    primary_hold_strengths: Mapped[list | None] = mapped_column(JSONB)
+    model_contributions: Mapped[list | None] = mapped_column(JSONB)
+    evidence: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    trim_engine_version: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    instrument: Mapped[Instrument] = relationship()
+
+
+class PredictionOutcome(Base):
+    """Realized outcome for one matured prediction — DERIVED data,
+    recomputable from prices; guarded upsert keeps re-evaluation
+    idempotent. The prediction row itself is never touched."""
+
+    __tablename__ = "prediction_outcomes"
+
+    prediction_id: Mapped[int] = mapped_column(ForeignKey("predictions.id"), primary_key=True)
+    entry_date: Mapped[date] = mapped_column(Date)
+    exit_date: Mapped[date] = mapped_column(Date)
+    entry_price: Mapped[Decimal] = mapped_column(Numeric(20, 6))
+    exit_price: Mapped[Decimal] = mapped_column(Numeric(20, 6))
+    actual_return: Mapped[float] = mapped_column(Float)
+    actual_excess_return: Mapped[float | None] = mapped_column(Float)
+    prediction_error: Mapped[float | None] = mapped_column(Float)
+    absolute_error: Mapped[float | None] = mapped_column(Float)
+    direction_correct: Mapped[bool | None] = mapped_column(Boolean)
+    outperformed: Mapped[bool | None] = mapped_column(Boolean)
+    underperformed: Mapped[bool | None] = mapped_column(Boolean)
+    evaluated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    prediction: Mapped[Prediction] = relationship()

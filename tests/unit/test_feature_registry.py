@@ -30,7 +30,7 @@ def test_registry_has_unique_names_and_expected_size() -> None:
     names = [c.spec.name for c in registry]
 
     assert len(names) == len(set(names))
-    assert 30 <= len(names) <= 60  # Phase 5 band, widened for Phase 9 model features
+    assert 30 <= len(names) <= 80  # Phase 5 band, widened for Phase 9 model features
     for calc in registry:
         assert calc.spec.description  # explanations need prose (D7)
 

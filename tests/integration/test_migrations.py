@@ -34,6 +34,16 @@ REFERENCE_TABLES = {
     "feature_definitions",
     "feature_store_daily",
     "feature_store_market_daily",
+    # Phase 7 — portfolio layer (§4.7; append-only ledger + projections)
+    "portfolios",
+    "transactions",
+    "lots",
+    "lot_closures",
+    "position_snapshots",
+    # Prediction Archive & Outcome Evaluation (ROADMAP Phase 10
+    # "trim-score output tables"): immutable archive + derived outcomes
+    "predictions",
+    "prediction_outcomes",
 }
 
 

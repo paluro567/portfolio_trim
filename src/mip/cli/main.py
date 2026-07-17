@@ -11,16 +11,23 @@ from pathlib import Path
 import typer
 
 from mip import __version__
+from mip.cli.attribution import attribution
 from mip.cli.calendar import app as calendar_app
+from mip.cli.decision import app as decision_app
 from mip.cli.earnings import app as earnings_app
+from mip.cli.evaluate import app as evaluate_app
 from mip.cli.features import app as features_app
 from mip.cli.ingest import app as ingest_app
 from mip.cli.intelligence import app as intelligence_app
 from mip.cli.macro import app as macro_app
+from mip.cli.portfolio import app as portfolio_app
 from mip.cli.quality import app as quality_app
+from mip.cli.report import app as report_app
 from mip.cli.research import app as research_app
 from mip.cli.runs import app as runs_app
+from mip.cli.trim import app as trim_app
 from mip.cli.universe import app as universe_app
+from mip.cli.update import update as update_command
 from mip.core.exceptions import ConfigurationError
 
 app = typer.Typer(
@@ -40,6 +47,13 @@ app.add_typer(research_app, name="research")
 app.add_typer(intelligence_app, name="intelligence")
 app.add_typer(runs_app, name="runs")
 app.add_typer(quality_app, name="quality")
+app.add_typer(portfolio_app, name="portfolio")
+app.add_typer(decision_app, name="decision")
+app.add_typer(trim_app, name="trim")
+app.command("attribution")(attribution)
+app.add_typer(evaluate_app, name="evaluate")
+app.command("update")(update_command)
+app.add_typer(report_app, name="report")
 
 
 def _version_callback(value: bool) -> None:

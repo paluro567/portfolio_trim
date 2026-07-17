@@ -12,8 +12,9 @@ historically happened to this symbol next?
    window ending at as_of — no future events, PIT inherited from the
    feature store).
 3. Per horizon, summarize each study with recency weighting, take the
-   EXCESS over the unconditional baseline as the effect, combine studies
-   by inverse variance, and map to score/confidence (see models.base).
+   EXCESS over the unconditional baseline as the effect, adjust standard
+   errors for overlapping forward windows, and combine studies with their
+   cross-regime correlation (see models.base — hardened aggregation).
 """
 
 from dataclasses import dataclass
@@ -27,10 +28,8 @@ from mip.models.base import (
     IntelligenceModel,
     ModelScore,
     RegimeEvidence,
-    combine_evidence,
-    confidence_from_evidence,
-    recency_weighted_stats,
-    score_from_z,
+    aggregate_horizon_evidence,
+    collect_regime_evidence,
 )
 from mip.repositories.features import FeatureRepository
 from mip.research import (
@@ -87,7 +86,7 @@ def all_regimes() -> list[RateRegime]:
 
 class InterestRateModel(IntelligenceModel):
     name = "interest_rate_sensitivity"
-    version = 1
+    version = 2  # v2: overlap-adjusted evidence aggregation + diagnostics
 
     def __init__(
         self,
@@ -107,6 +106,18 @@ class InterestRateModel(IntelligenceModel):
 
     def evaluate(self, symbol: str, as_of: date | None = None) -> list[ModelScore]:
         series_values, resolved_as_of = self._latest_changes(as_of)
+        if resolved_as_of is None:  # features exist but none at/before as_of
+            assert as_of is not None
+            explanation = (
+                f"No rate-change features are stored at or before {as_of.isoformat()} — "
+                "insufficient data to detect a rate regime. Neutral by construction."
+            )
+            return [
+                self._neutral_score(
+                    symbol, as_of, label, sessions, active=(), explanation=explanation
+                )
+                for label, sessions in HORIZONS.items()
+            ]
         active = self._active_regimes(series_values)
 
         if not active:
@@ -135,9 +146,13 @@ class InterestRateModel(IntelligenceModel):
 
     # -- regime detection ----------------------------------------------------
 
-    def _latest_changes(self, as_of: date | None) -> tuple[dict[RateRegime, float], date]:
+    def _latest_changes(
+        self, as_of: date | None
+    ) -> tuple[dict[tuple[str, int], float], date | None]:
         """Latest stored value per (series, window) feature at/before as_of;
-        resolved as_of = the newest feature date actually used."""
+        resolved as_of = the newest feature date actually used. Returns
+        (empty, None) when features exist but hold no value at/before as_of
+        — the caller answers with an honest neutral instead of crashing."""
         values: dict[tuple[str, int], float] = {}
         newest: date | None = None
         for series, template in SERIES.items():
@@ -150,7 +165,7 @@ class InterestRateModel(IntelligenceModel):
                         "run: mip features build --all"
                     )
                 stored = self._features.get_market_series(definition.id)
-                if as_of is not None:
+                if as_of is not None and not stored.empty:
                     stored = stored[stored.index <= pd.Timestamp(as_of)]
                 if stored.empty:
                     continue
@@ -158,9 +173,11 @@ class InterestRateModel(IntelligenceModel):
                 last = stored.index[-1].date()
                 newest = last if newest is None or last > newest else newest
         if newest is None:
-            raise ConfigurationError(
-                "no rate-change features stored; run: mip features build --all"
-            )
+            if as_of is None:  # nothing stored at all: a setup problem, not a data gap
+                raise ConfigurationError(
+                    "no rate-change features stored; run: mip features build --all"
+                )
+            return {}, None
         return values, (as_of or newest)
 
     def _active_regimes(self, values: dict[tuple[str, int], float]) -> list[RateRegime]:
@@ -191,61 +208,23 @@ class InterestRateModel(IntelligenceModel):
         studies: dict,
         active_labels: tuple[str, ...],
     ) -> ModelScore:
-        column = f"fwd_{sessions}d"
-        evidence: list[RegimeEvidence] = []
-        event_dates: set[date] = set()
-
-        for regime, result in studies.items():
-            stats = recency_weighted_stats(
-                result.forward_returns[column], as_of, self.half_life_years
-            )
-            if stats is None or stats.n < self.min_events:
-                continue
-            baseline = result.baseline[sessions].mean
-            if baseline is None:
-                continue
-            evidence.append(
-                RegimeEvidence(
-                    label=regime.label,
-                    description=regime.description,
-                    feature=regime.feature,
-                    n=stats.n,
-                    n_eff=stats.n_eff,
-                    mean=stats.mean,
-                    hit_rate=stats.hit_rate,
-                    baseline_mean=baseline,
-                    excess=stats.mean - baseline,
-                    se=stats.se,
-                    first_event=stats.first_event,
-                    last_event=stats.last_event,
-                )
-            )
-            resolved = result.forward_returns[column].dropna()
-            event_dates.update(ts.date() for ts in resolved.index)
-
+        evidence, study_dates, event_dates = collect_regime_evidence(
+            studies, sessions, as_of, self.half_life_years, self.min_events
+        )
         if not evidence:
             return self._neutral_score(
                 symbol, as_of, horizon_label, sessions, active_labels, thin_history=True
             )
 
-        combined = combine_evidence([e.excess for e in evidence], [e.se for e in evidence])
-        assert combined is not None  # evidence is non-empty with se > 0
-        weights = [1.0 / e.se**2 for e in evidence]
-        total_weight = sum(weights)
-        expected = sum(w * e.mean for w, e in zip(weights, evidence, strict=True)) / total_weight
-        hit_rate = (
-            sum(w * e.hit_rate for w, e in zip(weights, evidence, strict=True)) / total_weight
+        aggregate = aggregate_horizon_evidence(
+            evidence, study_dates, sessions, len(active_labels), self.prior_events
         )
-        confidence = confidence_from_evidence(
-            max(e.n_eff for e in evidence), combined.agreement, self.prior_events
-        )
-
-        supporting = tuple(
-            sorted([e for e in evidence if e.excess > 0], key=lambda e: -e.excess / e.se)[:3]
-        )
-        negative = tuple(
-            sorted([e for e in evidence if e.excess < 0], key=lambda e: e.excess / e.se)[:3]
-        )
+        explanation = self._explanation(symbol, horizon_label, evidence, aggregate.effect)
+        if aggregate.diagnostics.saturated:
+            explanation += (
+                f" Score saturated: the combined z-score is "
+                f"{aggregate.diagnostics.z_raw:+.1f}, beyond the ±4 reporting bound."
+            )
 
         return ModelScore(
             model=self.name,
@@ -254,15 +233,18 @@ class InterestRateModel(IntelligenceModel):
             as_of=as_of,
             horizon=horizon_label,
             horizon_sessions=sessions,
-            score=score_from_z(combined.z),
-            confidence=confidence,
-            expected_return=expected,
-            historical_hit_rate=hit_rate,
+            score=aggregate.score,
+            confidence=aggregate.confidence,
+            expected_return=aggregate.expected_return,
+            historical_hit_rate=aggregate.hit_rate,
             sample_size=len(event_dates),
-            strongest_supporting_regimes=supporting,
-            strongest_negative_regimes=negative,
-            explanation=self._explanation(symbol, horizon_label, evidence, combined.effect),
+            strongest_supporting_regimes=aggregate.supporting,
+            strongest_negative_regimes=aggregate.negative,
+            explanation=explanation,
             active_regimes=active_labels,
+            diagnostics=aggregate.diagnostics,
+            baseline_return=aggregate.expected_return - aggregate.effect,
+            excess_return=aggregate.effect,
         )
 
     def _explanation(
@@ -289,19 +271,21 @@ class InterestRateModel(IntelligenceModel):
         sessions: int,
         active: tuple[str, ...],
         thin_history: bool = False,
+        explanation: str | None = None,
     ) -> ModelScore:
-        if thin_history:
-            explanation = (
-                f"Rate regimes are active ({', '.join(active)}) but {symbol} has fewer "
-                f"than {self.min_events} resolved historical episodes per regime at this "
-                "horizon — no score can be supported by evidence."
-            )
-        else:
-            explanation = (
-                "No interest-rate regime is currently active: the latest 2Y and 10Y "
-                "changes are inside ±10 bps on every window (5/21/63/126 sessions). "
-                "History offers no rate-driven edge either way."
-            )
+        if explanation is None:
+            if thin_history:
+                explanation = (
+                    f"Rate regimes are active ({', '.join(active)}) but {symbol} has fewer "
+                    f"than {self.min_events} resolved historical episodes per regime at this "
+                    "horizon — no score can be supported by evidence."
+                )
+            else:
+                explanation = (
+                    "No interest-rate regime is currently active: the latest 2Y and 10Y "
+                    "changes are inside ±10 bps on every window (5/21/63/126 sessions). "
+                    "History offers no rate-driven edge either way."
+                )
         return ModelScore(
             model=self.name,
             model_version=self.version,

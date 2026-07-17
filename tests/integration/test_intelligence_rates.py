@@ -209,6 +209,36 @@ def test_score_stability_day_over_day(rate_env) -> None:
         assert abs(latest[horizon] - previous[horizon]) < 15.0
 
 
+def test_as_of_before_stored_features_is_neutral(rate_env) -> None:
+    """Regression: an as_of predating all stored features used to raise
+    TypeError (empty RangeIndex vs Timestamp); it must be a neutral score."""
+    scores = evaluate(rate_env, as_of=date(2023, 6, 1))
+    assert [s.horizon for s in scores] == list(HORIZONS)
+    for s in scores:
+        assert s.as_of == date(2023, 6, 1)
+        assert s.score == 50.0 and s.confidence == 0.0
+        assert s.expected_return is None and s.sample_size == 0
+        assert "insufficient data" in s.explanation.lower()
+
+
+def test_diagnostics_expose_overlap_and_saturation(rate_env) -> None:
+    scores = {s.horizon: s for s in evaluate(rate_env)}
+    for horizon in ("1w", "1m", "3m"):
+        s = scores[horizon]
+        diag = s.diagnostics
+        assert diag is not None
+        assert diag.active_regimes == len(s.active_regimes)
+        assert 1 <= diag.evidence_studies <= diag.active_regimes
+        assert diag.max_n_eff > 0
+        assert 0.0 <= diag.mean_cross_correlation <= 1.0
+        assert 0.0 <= diag.agreement <= 1.0
+        assert abs(diag.z_clipped) <= 4.0
+        assert diag.saturated == (abs(diag.z_raw) > 4.0)
+        assert s.to_dict()["diagnostics"]["saturated"] == diag.saturated
+        if diag.saturated:
+            assert "Score saturated" in s.explanation
+
+
 def test_cli_rates_command(rate_env, monkeypatch, test_database_url, restore_logging) -> None:
     monkeypatch.setenv("MIP_DATABASE_URL", test_database_url)
     from mip.cli.main import app

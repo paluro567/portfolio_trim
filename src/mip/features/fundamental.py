@@ -31,6 +31,30 @@ class FundamentalField(FeatureCalculator):
         return aligned
 
 
+class FeatureChange(FeatureCalculator):
+    """Change in an upstream feature vs `window` sessions earlier (e.g.
+    multiple expansion/compression for valuation ratios). PIT correctness is
+    inherited from the upstream feature; absent until the upstream has a
+    full window of history."""
+
+    def __init__(self, source: str, window: int, description: str) -> None:
+        super().__init__(
+            FeatureSpec(
+                name=f"{source}_chg_{window}d",
+                version=1,
+                scope=FeatureScope.INSTRUMENT,
+                description=description,
+                params={"source": source, "window": window},
+                lookback_sessions=window + 5,
+                depends_on=(source,),
+            )
+        )
+
+    def compute(self, ctx: FeatureContext) -> pd.Series:
+        source = ctx.features[str(self.spec.params["source"])]
+        return source - source.shift(int(self.spec.params["window"]))
+
+
 class PriceToSales(FeatureCalculator):
     def __init__(self) -> None:
         super().__init__(

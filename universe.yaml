@@ -149,3 +149,49 @@ instruments:
     type: stock
     sector: Materials
     industry: Diversified Metals & Mining
+
+  # ---- Peter Real Portfolio holdings (added 2026-07-16) ---------------
+  # Identities and classifications verified against the yfinance provider
+  # on 2026-07-16; last prices cross-checked against broker average costs.
+  # SPCX resolves to Space Exploration Technologies Corp. (not the retired
+  # SPAC ETF); INFQ resolves to Infleqtion, Inc.
+  - {symbol: VOO, type: etf, name: Vanguard S&P 500 ETF}
+  - {symbol: URNM, type: etf, name: Sprott Uranium Miners ETF, sector: Energy}
+  - {symbol: PLTR, type: stock, name: Palantir Technologies Inc., sector: Information Technology, industry: Software}
+  - {symbol: ZETA, type: stock, name: Zeta Global Holdings Corp., sector: Information Technology, industry: Software}
+  - {symbol: UNH, type: stock, name: UnitedHealth Group Incorporated, sector: Health Care, industry: Managed Health Care}
+  - {symbol: CAKE, type: stock, name: The Cheesecake Factory Incorporated, sector: Consumer Discretionary, industry: Restaurants}
+  - {symbol: SOFI, type: stock, name: SoFi Technologies Inc., sector: Financials, industry: Consumer Finance}
+  - {symbol: ELF, type: stock, name: e.l.f. Beauty Inc., sector: Consumer Staples, industry: Personal Care Products}
+  - {symbol: META, type: stock, name: Meta Platforms Inc., sector: Communication Services, industry: Interactive Media & Services}
+  - {symbol: NKE, type: stock, name: NIKE Inc., sector: Consumer Discretionary, industry: Footwear & Apparel}
+  - {symbol: MARA, type: stock, name: MARA Holdings Inc., sector: Financials, industry: Capital Markets}
+  - {symbol: PYPL, type: stock, name: PayPal Holdings Inc., sector: Financials, industry: Transaction & Payment Processing}
+  - {symbol: GOOG, type: stock, name: Alphabet Inc., sector: Communication Services, industry: Interactive Media & Services}
+  - {symbol: SNOW, type: stock, name: Snowflake Inc., sector: Information Technology, industry: Software}
+  - {symbol: AAPL, type: stock, name: Apple Inc., sector: Information Technology, industry: Technology Hardware}
+  - {symbol: MSFT, type: stock, name: Microsoft Corporation, sector: Information Technology, industry: Software}
+  - {symbol: WYNN, type: stock, name: Wynn Resorts Limited, sector: Consumer Discretionary, industry: Casinos & Gaming}
+  - {symbol: COIN, type: stock, name: Coinbase Global Inc., sector: Financials, industry: Capital Markets}
+  - {symbol: PINS, type: stock, name: Pinterest Inc., sector: Communication Services, industry: Interactive Media & Services}
+  - {symbol: EL, type: stock, name: The Estee Lauder Companies Inc., sector: Consumer Staples, industry: Personal Care Products}
+  - {symbol: HOOD, type: stock, name: Robinhood Markets Inc., sector: Financials, industry: Capital Markets}
+  - {symbol: RZLV, type: stock, name: Rezolve AI PLC, sector: Information Technology, industry: Software}
+  - {symbol: AXP, type: stock, name: American Express Company, sector: Financials, industry: Consumer Finance}
+  - {symbol: HIMS, type: stock, name: Hims & Hers Health Inc., sector: Health Care, industry: Health Care Providers & Services}
+  - {symbol: MNDY, type: stock, name: monday.com Ltd., sector: Information Technology, industry: Software}
+  - {symbol: PANW, type: stock, name: Palo Alto Networks Inc., sector: Information Technology, industry: Software}
+  - {symbol: SPCX, type: stock, name: Space Exploration Technologies Corp., sector: Industrials, industry: Aerospace & Defense}
+  - {symbol: T, type: stock, name: AT&T Inc., sector: Communication Services, industry: Integrated Telecommunication Services}
+  - {symbol: CRWD, type: stock, name: CrowdStrike Holdings Inc., sector: Information Technology, industry: Software}
+  - {symbol: RBRK, type: stock, name: Rubrik Inc., sector: Information Technology, industry: Software}
+  - {symbol: BE, type: stock, name: Bloom Energy Corporation, sector: Industrials, industry: Electrical Equipment}
+  - {symbol: TTD, type: stock, name: The Trade Desk Inc., sector: Communication Services, industry: Advertising}
+  - {symbol: MA, type: stock, name: Mastercard Incorporated, sector: Financials, industry: Transaction & Payment Processing}
+  - {symbol: INFQ, type: stock, name: Infleqtion Inc., sector: Information Technology, industry: Software}
+  - {symbol: ORCL, type: stock, name: Oracle Corporation, sector: Information Technology, industry: Software}
+  - {symbol: SMCI, type: stock, name: Super Micro Computer Inc., sector: Information Technology, industry: Technology Hardware}
+  - {symbol: CVX, type: stock, name: Chevron Corporation, sector: Energy, industry: Integrated Oil & Gas}
+  - {symbol: BBAI, type: stock, name: BigBear.ai Holdings Inc., sector: Information Technology, industry: IT Services}
+  - {symbol: CORZ, type: stock, name: Core Scientific Inc., sector: Information Technology, industry: Software}
+  - {symbol: FUBO, type: stock, name: FuboTV Inc., sector: Communication Services, industry: Media}

@@ -115,3 +115,19 @@ class InstrumentRepository:
 
     def list_instruments(self) -> list[Instrument]:
         return list(self._session.scalars(select(Instrument).order_by(Instrument.symbol)))
+
+    def sector_etf_symbol(self, instrument: Instrument) -> str | None:
+        """The instrument's sector-benchmark ETF via the FK chain (D11):
+        sector (direct, or via industry) -> sectors.etf_instrument_id."""
+        sector_id = instrument.sector_id
+        if sector_id is None and instrument.industry_id is not None:
+            sector_id = self._session.scalar(
+                select(Industry.sector_id).where(Industry.id == instrument.industry_id)
+            )
+        if sector_id is None:
+            return None
+        return self._session.scalar(
+            select(Instrument.symbol)
+            .join(Sector, Sector.etf_instrument_id == Instrument.id)
+            .where(Sector.id == sector_id)
+        )

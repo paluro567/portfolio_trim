@@ -16,16 +16,13 @@ historically happened to this symbol next?
    after every comparable historical episode (mode=events, window ending at
    as_of — no future events, PIT inherited from the feature store).
 4. Per horizon, summarize each study with recency weighting, take the EXCESS
-   over the unconditional baseline as the effect, combine studies by inverse
-   variance, and map to score/confidence (see models.base).
-
-Correlation across the remaining studies (the same market condition seen
-through different windows/families) is handled as in the Interest Rate
-Model: combined z is clipped to ±4, and confidence uses the MAX per-study
-effective sample size — overlapping studies never sum their evidence.
+   over the unconditional baseline as the effect, adjust standard errors for
+   overlapping forward windows, and combine studies with their cross-regime
+   correlation (see models.base — hardened aggregation). Confidence uses
+   overlap-adjusted effective samples, so flickering regimes with hundreds
+   of near-duplicate episodes cannot buy certainty.
 """
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 
@@ -35,15 +32,14 @@ from sqlalchemy.orm import Session
 
 from mip.core.exceptions import ConfigurationError
 from mip.domain.enums import FeatureScope
-from mip.domain.models import Industry, Instrument, Sector
+from mip.domain.models import Instrument
 from mip.models.base import (
     IntelligenceModel,
     ModelScore,
     RegimeEvidence,
-    combine_evidence,
-    confidence_from_evidence,
-    recency_weighted_stats,
-    score_from_z,
+    aggregate_horizon_evidence,
+    collect_regime_evidence,
+    select_active,
 )
 from mip.repositories.features import FeatureRepository
 from mip.research import (
@@ -53,7 +49,6 @@ from mip.research import (
     ResearchWindow,
     SampleMode,
 )
-from mip.research.query import OPERATORS
 
 WINDOWS = (5, 21, 63, 126)
 HORIZONS: dict[str, int] = {"1w": 5, "2w": 10, "1m": 21, "3m": 63, "6m": 126, "1y": 252}
@@ -268,32 +263,9 @@ def regime_candidates(etf: str, symbol: str) -> dict[str, list[SectorRegime]]:
     return families
 
 
-def select_active(
-    families: dict[str, list[SectorRegime]],
-    latest: Callable[[str, str | None], float | None],
-) -> list[SectorRegime]:
-    """First active candidate per family (most specific wins; the rest of
-    the family is skipped — no double-counting of nested regimes).
-    `latest(feature, symbol|None) -> float|None` supplies current values;
-    a candidate with any unavailable value is simply not active."""
-    active: list[SectorRegime] = []
-    for candidates in families.values():
-        for regime in candidates:
-            satisfied = True
-            for research_filter in regime.filters:
-                value = latest(research_filter.feature, research_filter.symbol)
-                if value is None or not OPERATORS[research_filter.op](value, research_filter.value):
-                    satisfied = False
-                    break
-            if satisfied:
-                active.append(regime)
-                break
-    return active
-
-
 class SectorRotationModel(IntelligenceModel):
     name = "sector_rotation"
-    version = 1
+    version = 2  # v2: overlap-adjusted evidence aggregation + diagnostics
 
     def __init__(
         self,
@@ -326,6 +298,17 @@ class SectorRotationModel(IntelligenceModel):
             ]
 
         active, resolved_as_of = self._detect(symbol, etf, as_of)
+        if resolved_as_of is None:  # features exist but none at/before as_of
+            assert as_of is not None
+            explanation = (
+                f"No sector-rotation features are stored at or before {as_of.isoformat()} "
+                f"for {symbol}/{etf} — insufficient data to detect a sector regime. "
+                "Neutral by construction."
+            )
+            return [
+                self._neutral_score(symbol, as_of, label, sessions, (), explanation)
+                for label, sessions in HORIZONS.items()
+            ]
         if not active:
             explanation = (
                 f"No sector-rotation regime is currently active: {etf}'s relative "
@@ -360,27 +343,22 @@ class SectorRotationModel(IntelligenceModel):
     # -- sector ETF resolution (FK path only, D11) ---------------------------
 
     def _sector_etf(self, symbol: str) -> str | None:
-        instrument = self._session.scalar(select(Instrument).where(Instrument.symbol == symbol))
+        from mip.repositories.instruments import InstrumentRepository
+
+        repo = InstrumentRepository(self._session)
+        instrument = repo.get_by_symbol(symbol)
         if instrument is None:
             raise ConfigurationError(f"unknown symbol {symbol!r}")
-        sector_id = instrument.sector_id
-        if sector_id is None and instrument.industry_id is not None:
-            sector_id = self._session.scalar(
-                select(Industry.sector_id).where(Industry.id == instrument.industry_id)
-            )
-        if sector_id is None:
-            return None
-        return self._session.scalar(
-            select(Instrument.symbol)
-            .join(Sector, Sector.etf_instrument_id == Instrument.id)
-            .where(Sector.id == sector_id)
-        )
+        return repo.sector_etf_symbol(instrument)
 
     # -- regime detection ----------------------------------------------------
 
-    def _detect(self, symbol: str, etf: str, as_of: date | None) -> tuple[list[SectorRegime], date]:
+    def _detect(
+        self, symbol: str, etf: str, as_of: date | None
+    ) -> tuple[list[SectorRegime], date | None]:
         """Active regimes from the latest stored feature values at/before
-        as_of; resolved as_of = the newest feature date actually read."""
+        as_of; resolved as_of = the newest feature date actually read, or
+        None when features exist but hold no value at/before as_of."""
         cache: dict[tuple[str, str | None], float | None] = {}
         newest: list[date] = []  # mutable cell for the closure
 
@@ -412,10 +390,12 @@ class SectorRotationModel(IntelligenceModel):
 
         active = select_active(regime_candidates(etf, symbol), latest)
         if not newest:
-            raise ConfigurationError(
-                f"no sector-rotation features stored for {symbol!r}/{etf!r}; "
-                "run: mip features build --all"
-            )
+            if as_of is None:  # nothing stored at all: a setup problem, not a data gap
+                raise ConfigurationError(
+                    f"no sector-rotation features stored for {symbol!r}/{etf!r}; "
+                    "run: mip features build --all"
+                )
+            return [], None
         return active, (as_of or newest[0])
 
     def _instrument_id(self, symbol: str) -> int:
@@ -444,38 +424,9 @@ class SectorRotationModel(IntelligenceModel):
         studies: dict,
         active_labels: tuple[str, ...],
     ) -> ModelScore:
-        column = f"fwd_{sessions}d"
-        evidence: list[RegimeEvidence] = []
-        event_dates: set[date] = set()
-
-        for regime, result in studies.items():
-            stats = recency_weighted_stats(
-                result.forward_returns[column], as_of, self.half_life_years
-            )
-            if stats is None or stats.n < self.min_events:
-                continue
-            baseline = result.baseline[sessions].mean
-            if baseline is None:
-                continue
-            evidence.append(
-                RegimeEvidence(
-                    label=regime.label,
-                    description=regime.description,
-                    feature=regime.feature,
-                    n=stats.n,
-                    n_eff=stats.n_eff,
-                    mean=stats.mean,
-                    hit_rate=stats.hit_rate,
-                    baseline_mean=baseline,
-                    excess=stats.mean - baseline,
-                    se=stats.se,
-                    first_event=stats.first_event,
-                    last_event=stats.last_event,
-                )
-            )
-            resolved = result.forward_returns[column].dropna()
-            event_dates.update(ts.date() for ts in resolved.index)
-
+        evidence, study_dates, event_dates = collect_regime_evidence(
+            studies, sessions, as_of, self.half_life_years, self.min_events
+        )
         if not evidence:
             explanation = (
                 f"Sector regimes are active ({', '.join(active_labels)}) but {symbol} "
@@ -486,24 +437,15 @@ class SectorRotationModel(IntelligenceModel):
                 symbol, as_of, horizon_label, sessions, active_labels, explanation
             )
 
-        combined = combine_evidence([e.excess for e in evidence], [e.se for e in evidence])
-        assert combined is not None  # evidence is non-empty with se > 0
-        weights = [1.0 / e.se**2 for e in evidence]
-        total_weight = sum(weights)
-        expected = sum(w * e.mean for w, e in zip(weights, evidence, strict=True)) / total_weight
-        hit_rate = (
-            sum(w * e.hit_rate for w, e in zip(weights, evidence, strict=True)) / total_weight
+        aggregate = aggregate_horizon_evidence(
+            evidence, study_dates, sessions, len(active_labels), self.prior_events
         )
-        confidence = confidence_from_evidence(
-            max(e.n_eff for e in evidence), combined.agreement, self.prior_events
-        )
-
-        supporting = tuple(
-            sorted([e for e in evidence if e.excess > 0], key=lambda e: -e.excess / e.se)[:3]
-        )
-        negative = tuple(
-            sorted([e for e in evidence if e.excess < 0], key=lambda e: e.excess / e.se)[:3]
-        )
+        explanation = self._explanation(symbol, horizon_label, evidence, aggregate.effect)
+        if aggregate.diagnostics.saturated:
+            explanation += (
+                f" Score saturated: the combined z-score is "
+                f"{aggregate.diagnostics.z_raw:+.1f}, beyond the ±4 reporting bound."
+            )
 
         return ModelScore(
             model=self.name,
@@ -512,15 +454,18 @@ class SectorRotationModel(IntelligenceModel):
             as_of=as_of,
             horizon=horizon_label,
             horizon_sessions=sessions,
-            score=score_from_z(combined.z),
-            confidence=confidence,
-            expected_return=expected,
-            historical_hit_rate=hit_rate,
+            score=aggregate.score,
+            confidence=aggregate.confidence,
+            expected_return=aggregate.expected_return,
+            historical_hit_rate=aggregate.hit_rate,
             sample_size=len(event_dates),
-            strongest_supporting_regimes=supporting,
-            strongest_negative_regimes=negative,
-            explanation=self._explanation(symbol, horizon_label, evidence, combined.effect),
+            strongest_supporting_regimes=aggregate.supporting,
+            strongest_negative_regimes=aggregate.negative,
+            explanation=explanation,
             active_regimes=active_labels,
+            diagnostics=aggregate.diagnostics,
+            baseline_return=aggregate.expected_return - aggregate.effect,
+            excess_return=aggregate.effect,
         )
 
     def _explanation(
