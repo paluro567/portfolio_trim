@@ -149,3 +149,100 @@ def export(
     else:
         out.write_text(json.dumps(result.to_dict(), indent=2))
     typer.echo(f"wrote {len(result.event_dates)} events to {out} ({fmt})")
+
+
+@app.command("analogues")
+def analogues(
+    symbol: str = typer.Argument(..., help="Symbol to find analogues for."),
+    as_of: str = typer.Option(None, "--as-of", help="Historical date (YYYY-MM-DD)."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """The most similar historical combined states and what followed them."""
+    from datetime import date as date_type
+
+    from mip.research.analogues import AnalogueEngine
+
+    factory = open_session_factory()
+    with session_scope(factory) as session:
+        result = AnalogueEngine(session).find(
+            symbol, as_of=date_type.fromisoformat(as_of) if as_of else None
+        )
+        if as_json:
+            typer.echo(json.dumps(result.to_dict(), indent=2))
+            return
+        typer.echo(f"{result.symbol} — historical analogues (as of {result.as_of})")
+        if result.insufficient:
+            typer.echo(f"  insufficient: {result.insufficient}")
+            return
+        typer.echo(
+            f"{'DATE':<12} {'OVERALL':>7} {'MARKET':>7} {'SECTOR':>7} "
+            f"{'COMPANY':>8} {'CATALYST':>9}"
+        )
+        for a in result.analogues:
+            sector = f"{a.sector:.2f}" if a.sector is not None else "—"
+            catalyst = f"{a.catalysts:.2f}" if a.catalysts is not None else "—"
+            typer.echo(
+                f"{a.date.isoformat():<12} {a.overall:>7.2f} {a.market:>7.2f} "
+                f"{sector:>7} {a.company:>8.2f} {catalyst:>9}"
+            )
+        typer.echo(
+            f"\n{'HZN':>4} {'N':>3} {'W-MEAN':>8} {'MEDIAN':>8} {'P(+)':>5} {'>SPY':>5} {'MDD':>7}"
+        )
+        for label, o in result.outcomes.items():
+            if o.n == 0:
+                typer.echo(f"{label:>4}   0        —        —     —     —       —")
+                continue
+            beat = f"{o.p_beat_spy * 100:.0f}%" if o.p_beat_spy is not None else "—"
+            typer.echo(
+                f"{label:>4} {o.n:>3} {o.weighted_mean_return * 100:>+7.2f}% "
+                f"{o.median_return * 100:>+7.2f}% {o.p_positive * 100:>4.0f}% {beat:>5} "
+                f"{o.median_max_drawdown * 100:>6.1f}%"
+            )
+
+
+@app.command("environment")
+def environment(
+    as_of: str = typer.Option(None, "--as-of", help="Historical date (YYYY-MM-DD)."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Deterministic market-environment labels from stored features."""
+    from datetime import date as date_type
+
+    from mip.research.analogues import AnalogueEngine
+
+    factory = open_session_factory()
+    with session_scope(factory) as session:
+        labels = AnalogueEngine(session).environment(
+            date_type.fromisoformat(as_of) if as_of else None
+        )
+        if as_json:
+            typer.echo(json.dumps(labels, indent=2))
+            return
+        for key, value in labels.items():
+            shown = f"{value:.2f}" if isinstance(value, float) else (value or "unavailable")
+            typer.echo(f"{key.replace('_', ' '):<24} {shown}")
+
+
+@app.command("catalysts")
+def catalysts(
+    symbol: str = typer.Argument(..., help="Symbol to inspect."),
+    as_of: str = typer.Option(None, "--as-of", help="Historical date (YYYY-MM-DD)."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Point-in-time catalyst snapshot (confirmed data only; unavailable is
+    labeled, never estimated)."""
+    from datetime import date as date_type
+
+    from mip.research.analogues import AnalogueEngine
+
+    factory = open_session_factory()
+    with session_scope(factory) as session:
+        snapshot = AnalogueEngine(session).catalyst_state(
+            symbol, date_type.fromisoformat(as_of) if as_of else None
+        )
+        if as_json:
+            typer.echo(json.dumps(snapshot, indent=2))
+            return
+        for key, value in snapshot.items():
+            shown = f"{value:.4g}" if value is not None else "unavailable"
+            typer.echo(f"{key.replace('_', ' '):<24} {shown}")

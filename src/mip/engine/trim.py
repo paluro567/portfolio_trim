@@ -34,7 +34,7 @@ repositories, or the portfolio ledger (portfolio context arrives on
 DecisionEvidence verbatim).
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date
 
 from sqlalchemy.orm import Session
@@ -221,6 +221,7 @@ class TrimAssessment:
     limitations: tuple[str, ...]
     explanation: str
     diagnostics: TrimDiagnostics
+    context: dict = field(default_factory=dict)  # per-model structured context
 
     def to_dict(self) -> dict:
         return {
@@ -258,6 +259,7 @@ class TrimAssessment:
             "limitations": list(self.limitations),
             "explanation": self.explanation,
             "diagnostics": self.diagnostics.to_dict(),
+            "context": self.context,
         }
 
 
@@ -465,6 +467,7 @@ def assess_trim(evidence: DecisionEvidence, config: TrimConfig | None = None) ->
         limitations=_limitations(evidence, quality, downgraded, before, floor, risk_term_available),
         explanation=_explanation(evidence, final, e_score, adjustment, label, quality),
         diagnostics=diagnostics,
+        context=evidence.model_context,
     )
 
 

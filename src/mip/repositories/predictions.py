@@ -100,6 +100,26 @@ class PredictionRepository:
         ).all()
         return [(p, o, s) for p, o, s in rows]
 
+    def latest_before(self, symbol: str, portfolio_key: str, before) -> list[Prediction]:
+        """The most recent archived prediction per horizon for this symbol
+        and portfolio context, strictly before `before` — the comparison
+        basis for what-changed analysis."""
+        rows = self._session.execute(
+            select(Prediction)
+            .join(Instrument, Instrument.id == Prediction.instrument_id)
+            .where(
+                Instrument.symbol == symbol.strip().upper(),
+                Prediction.portfolio_key == portfolio_key,
+                Prediction.as_of < before,
+            )
+            .order_by(Prediction.as_of.desc(), Prediction.id.desc())
+        ).scalars()
+        latest: dict[str, Prediction] = {}
+        for row in rows:
+            if row.horizon not in latest:
+                latest[row.horizon] = row
+        return list(latest.values())
+
     # -- calendar & prices ----------------------------------------------------
 
     def entry_session(self, as_of: date) -> date | None:

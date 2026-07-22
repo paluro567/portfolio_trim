@@ -41,7 +41,7 @@ from mip.features.price import (
     Volatility,
     VolatilityRatio,
 )
-from mip.features.regime import RegimeBull, RegimeHighVol, RegimeRates
+from mip.features.regime import RegimeBull, RegimeHighVol, RegimeRates, SectorBreadth
 from mip.features.relative import RelativeReturn, RelativeReturnAccel
 
 
@@ -162,6 +162,7 @@ def build_registry() -> list[FeatureCalculator]:
         # -- market regimes ----------------------------------------------------
         RegimeBull(),
         RegimeHighVol(),
+        SectorBreadth(),
         RegimeRates("rising"),
         RegimeRates("falling"),
     ]

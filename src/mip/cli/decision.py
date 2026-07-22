@@ -6,6 +6,7 @@ import typer
 
 from mip.cli._deps import open_session_factory
 from mip.core.db import session_scope
+from mip.models.evidence import KNOWN_MODELS
 
 app = typer.Typer(
     help="Decision evidence: what does the total historical evidence suggest? "
@@ -51,7 +52,7 @@ def evidence(
                 f"{'EXP':>8} {'EXCESS':>8} {'N_EFF':>6} {'MODELS':>7}"
             )
             for e in items:
-                models = f"{len(e.participating_models)}/7"
+                models = f"{len(e.participating_models)}/{len(KNOWN_MODELS)}"
                 typer.echo(
                     f"{e.horizon:>4} {e.combined_score:>6.1f} {e.combined_confidence:>5.2f} "
                     f"{e.evidence_strength:>5.2f} {e.contradictory_evidence:>6.2f} "

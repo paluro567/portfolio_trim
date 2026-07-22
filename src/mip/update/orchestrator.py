@@ -646,26 +646,37 @@ class UpdateOrchestrator:
             render_portfolio_markdown,
             render_symbol_markdown,
         )
+        from mip.reporting.latest import publish_latest
 
         assert self._bundle is not None
         base = self._report_dir(resolved)
         (base / "portfolio").mkdir(parents=True, exist_ok=True)
         (base / "symbols").mkdir(parents=True, exist_ok=True)
 
-        files = 0
+        files = latest = 0
         portfolio_report = build_portfolio_report(self._bundle, portfolio)
         stem = base / "portfolio" / portfolio.replace(" ", "_")
-        stem.with_suffix(".md").write_text(render_portfolio_markdown(portfolio_report))
-        stem.with_suffix(".json").write_text(json.dumps(portfolio_report.to_dict(), indent=2))
+        portfolio_md = render_portfolio_markdown(portfolio_report)
+        portfolio_json = json.dumps(portfolio_report.to_dict(), indent=2)
+        stem.with_suffix(".md").write_text(portfolio_md)
+        stem.with_suffix(".json").write_text(portfolio_json)
         files += 2
+        publish_latest(self._settings.report_root, "Portfolio.md", portfolio_md)
+        publish_latest(self._settings.report_root, "Portfolio.json", portfolio_json)
+        latest += 2
         for symbol, pairs in sorted(self._bundle.items()):
             report = build_symbol_report(pairs)
             symbol_stem = base / "symbols" / symbol
-            symbol_stem.with_suffix(".md").write_text(render_symbol_markdown(report))
-            symbol_stem.with_suffix(".json").write_text(json.dumps(report.to_dict(), indent=2))
+            symbol_md = render_symbol_markdown(report)
+            symbol_json = json.dumps(report.to_dict(), indent=2)
+            symbol_stem.with_suffix(".md").write_text(symbol_md)
+            symbol_stem.with_suffix(".json").write_text(symbol_json)
             files += 2
+            publish_latest(self._settings.report_root, f"{symbol}_decision.md", symbol_md)
+            publish_latest(self._settings.report_root, f"{symbol}_decision.json", symbol_json)
+            latest += 2
         result.report_directory = str(base)
-        return {"directory": str(base), "files": files}
+        return {"directory": str(base), "files": files, "latest": latest}
 
     def _archive(self, session: Session, result: UpdateResult) -> dict:
         from mip.evaluation.archive import PredictionArchiver

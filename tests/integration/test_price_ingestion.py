@@ -1,8 +1,9 @@
 """Phase 2 gate tests: the full price-ingestion flow against Postgres,
 with a fake provider (no network)."""
 
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
@@ -110,6 +111,12 @@ class PriceEnv:
                 settings=self.settings,
                 sleep=lambda _s: None,
                 today=lambda: self.today,
+                # deterministic clock: 11pm Eastern on `today`, i.e. well
+                # after close+buffer, so `today` (a synthetic session) is
+                # treated as COMPLETE and fetch_end resolves to it.
+                now=lambda: datetime.combine(
+                    self.today, time(23, 0), tzinfo=ZoneInfo("America/New_York")
+                ),
             )
             run, outcomes = service.ingest(symbols, full_refresh=full_refresh)
             session.flush()
@@ -167,7 +174,7 @@ def env(
 ) -> PriceEnv:
     with session_scope(session_factory) as session:
         repo = InstrumentRepository(session)
-        for symbol in ("TEST1", "TEST2", "JUMP", "SPLITCO", "BROKEN"):
+        for symbol in ("TEST1", "TEST2", "JUMP", "SPLITCO", "BROKEN", "SNOWCO", "DIVCO"):
             repo.create_instrument(symbol, InstrumentType.STOCK, effective_date=JUNE_START)
         session.add_all(
             TradingDay(exchange="NYSE", calendar_date=d) for d in weekdays(JUNE_START, JUNE_END)
@@ -406,3 +413,215 @@ def test_transient_errors_are_retried(env: PriceEnv) -> None:
 
     assert status is RunStatus.SUCCESS and inserted == 5
     assert attempts["n"] == 3  # two transient failures absorbed
+
+
+# ======================================================================
+# Regression: 2026-07-20 tripwire-storm bug fix (docs/PRICES.md).
+# ======================================================================
+
+
+def _seed(env: PriceEnv, symbol: str = "TEST1") -> dict[date, tuple]:
+    """First full ingest of a clean steady history; returns stored rows."""
+    env.provider.set_history(symbol, steady_history(DAYS))
+    env.ingest([symbol])
+    return env.prices(symbol)
+
+
+def test_unchanged_overlap_is_incremental_not_full_refresh(env: PriceEnv) -> None:
+    """1. A normal second run with identical provider data fetches only the
+    overlap window, records nothing, and never full-refreshes."""
+    _seed(env)
+    _, status, inserted, updated, _, outcomes = env.ingest(["TEST1"])
+
+    assert status is RunStatus.SUCCESS
+    assert (inserted, updated) == (0, 0)
+    assert outcomes["TEST1"].full_refresh is False
+    assert outcomes["TEST1"].revisions == 0
+    assert env.revisions() == []
+    _, start, _ = env.provider.calls[-1]
+    assert start != env.settings.history_start_date  # overlap window, not 2010->
+
+
+def test_subtolerance_float_noise_creates_no_revisions(env: PriceEnv) -> None:
+    """2. adj_close jitter below the materiality gate is ignored entirely —
+    no revision, no update, no tripwire, stored value untouched."""
+    stored = _seed(env)
+    noisy_day = DAYS[-3]
+    stored_adj = float(stored[noisy_day][4])
+    env.provider.patch("TEST1", noisy_day, adj_close=stored_adj + 0.0003)  # << 1e-5 rel
+
+    _, status, _, updated, _, outcomes = env.ingest(["TEST1"])
+
+    assert status is RunStatus.SUCCESS
+    assert updated == 0 and outcomes["TEST1"].revisions == 0
+    assert outcomes["TEST1"].full_refresh is False
+    assert env.revisions() == []
+    assert env.prices("TEST1")[noisy_day][4] == stored[noisy_day][4]  # unchanged
+
+
+def test_raw_vs_adjusted_mismatch_fails_as_semantic_error(env: PriceEnv) -> None:
+    """3. A systematic raw-close shift across the overlap with no split is a
+    config/semantics error — the symbol fails loudly, and the savepoint
+    leaves ZERO false revisions rather than rewriting history."""
+    stored = _seed(env)
+    rows = steady_history(DAYS)
+    for i, d in enumerate(DAYS):
+        if d in DAYS[-5:]:  # the whole overlap window, uniformly re-scaled
+            for col in ("open", "high", "low", "close", "adj_close"):
+                rows[i][col] = round(rows[i][col] * 0.9, 4)
+    env.provider.set_history("TEST1", rows)
+
+    _, status, _, updated, error_detail, outcomes = env.ingest(["TEST1"])
+
+    assert status is RunStatus.FAILED
+    assert outcomes["TEST1"].status == "failed"
+    assert "raw-vs-adjusted" in error_detail["failed_symbols"]["TEST1"]
+    assert updated == 0 and env.revisions() == []  # nothing committed
+    assert env.prices("TEST1")[DAYS[-3]] == stored[DAYS[-3]]  # rolled back intact
+
+
+def test_new_split_triggers_exactly_one_full_refresh(env: PriceEnv) -> None:
+    """4. A newly arrived split restates raw history -> exactly one full
+    refresh; the immediately following run is idempotent."""
+    env.provider.set_history("SPLITCO", steady_history(DAYS))
+    env.ingest(["SPLITCO"])
+
+    split_day = DAYS[-2]
+    rows = steady_history(DAYS)
+    for i, d in enumerate(DAYS):  # provider restates pre-split raw prices to new units
+        if d < split_day:
+            for col in ("open", "high", "low", "close", "adj_close"):
+                rows[i][col] = round(rows[i][col] / 2, 4)
+    env.provider.set_history("SPLITCO", rows)
+    env.provider.set_actions(
+        "SPLITCO",
+        [
+            {
+                "action_type": "split",
+                "ex_date": split_day,
+                "split_ratio": 2.0,
+                "cash_amount": float("nan"),
+            }
+        ],
+    )
+
+    _, status, _, _, _, outcomes = env.ingest(["SPLITCO"])
+    assert status is RunStatus.SUCCESS
+    assert outcomes["SPLITCO"].full_refresh is True
+    assert outcomes["SPLITCO"].revisions > 0  # genuine split reconciliation recorded
+
+    again = env.ingest(["SPLITCO"])
+    assert again[-1]["SPLITCO"].full_refresh is False  # not re-triggered
+    assert again[2] == 0 and again[3] == 0  # idempotent: no inserts/updates
+
+
+def test_dividend_backadjustment_refreshes_and_records_adj_close(env: PriceEnv) -> None:
+    """5. A dividend back-adjustment (adj_close moves, raw close does not) on
+    a completed historical session escalates once and records adj_close
+    revisions — raw close is never rewritten."""
+    stored = _seed(env, "DIVCO")
+    hist_day = DAYS[-3]
+    env.provider.patch("DIVCO", hist_day, adj_close=float(stored[hist_day][4]) - 0.5)
+
+    _, status, _, _, _, outcomes = env.ingest(["DIVCO"])
+
+    assert status is RunStatus.SUCCESS
+    assert outcomes["DIVCO"].full_refresh is True
+    fields = {(r.entity_key, r.field) for r in env.revisions()}
+    assert (f"DIVCO/{hist_day}", "adj_close") in fields
+    assert (f"DIVCO/{hist_day}", "close") not in fields  # raw close preserved
+    assert env.prices("DIVCO")[hist_day][3] == stored[hist_day][3]  # raw close unchanged
+
+
+def test_genuine_single_row_correction_records_one_revision_no_storm(env: PriceEnv) -> None:
+    """6. A real spot correction (close AND adj_close move on one day) is an
+    ordinary revision — one row updated, no full-history refresh."""
+    stored = _seed(env)
+    fix_day = DAYS[-4]
+    # a coherent correction: +0.5 stays inside the row's unchanged high/low
+    corrected = float(stored[fix_day][3]) + 0.5
+    env.provider.patch("TEST1", fix_day, close=corrected, adj_close=corrected)
+
+    _, status, _, updated, _, outcomes = env.ingest(["TEST1"])
+
+    assert status is RunStatus.SUCCESS
+    assert outcomes["TEST1"].full_refresh is False  # close moved too -> not a re-adjustment
+    assert updated == 1
+    fields = {(r.entity_key, r.field) for r in env.revisions()}
+    assert fields == {(f"TEST1/{fix_day}", "close"), (f"TEST1/{fix_day}", "adj_close")}
+
+
+def test_full_refresh_totals_are_not_double_counted(env: PriceEnv) -> None:
+    """8. The incremental+refresh passes report one coherent set of totals:
+    each changed date counted once, DB revisions == reported revisions, and
+    the refresh breakdown is consistent."""
+    stored = _seed(env)
+    inside, outside = DAYS[-3], DAYS[2]  # one in the overlap, one only reachable via refresh
+    env.provider.patch("TEST1", inside, adj_close=float(stored[inside][4]) - 0.5)
+    env.provider.patch("TEST1", outside, adj_close=float(stored[outside][4]) - 0.5)
+
+    _, status, _, updated, _, outcomes = env.ingest(["TEST1"])
+    o = outcomes["TEST1"]
+
+    assert o.full_refresh is True
+    assert updated == 2  # exactly the two distinct changed dates, not 4
+    assert o.revisions == len(env.revisions()) == 2  # no double-count vs the DB
+    assert (o.refresh_updated, o.refresh_revisions) == (1, 1)  # 'outside' found in refresh
+    dates = {r.entity_key for r in env.revisions()}
+    assert dates == {f"TEST1/{inside}", f"TEST1/{outside}"}
+
+
+def test_snow_rejected_archive_collision_is_resolved(env: PriceEnv) -> None:
+    """9 & 10. SNOW's exact failure: a recently rejected (OHLC-incoherent)
+    row is re-rejected by the tripwire's full-refresh pass over the same
+    date. Old code hit `archive is immutable`; now the two passes archive
+    under distinct identities and the symbol succeeds."""
+    rows = steady_history(DAYS)
+    bad_day = DAYS[-2]
+    rows[DAYS.index(bad_day)] = price_row(bad_day, 108.0, high=90.0, low=95.0, adj_close=108.0)
+    env.provider.set_history("SNOWCO", rows)
+    _, _, _, _, _, first = env.ingest(["SNOWCO"])
+    assert first["SNOWCO"].quarantined == 1  # incoherent row rejected on first load
+
+    # a dividend back-adjustment now trips the tripwire; bad_day stays
+    # incoherent so BOTH passes reject the same single date
+    stored = env.prices("SNOWCO")
+    hist_day = DAYS[-4]
+    env.provider.patch("SNOWCO", hist_day, adj_close=float(stored[hist_day][4]) - 0.6)
+
+    run_id, status, _, _, error_detail, second = env.ingest(["SNOWCO"])
+
+    assert status is RunStatus.SUCCESS, error_detail
+    assert second["SNOWCO"].status == "ok"  # no immutable-archive failure
+    assert second["SNOWCO"].full_refresh is True
+    sidecars = sorted(
+        p.name for p in (env.settings.rawdata_root / "prices" / "SNOWCO").glob("*.rejected.csv")
+    )
+    # this run's incremental (unlabeled) and full-refresh (-full) rejects coexist
+    assert f"{bad_day}_{bad_day}_run{run_id}.rejected.csv" in sidecars
+    assert f"{bad_day}_{bad_day}_run{run_id}-full.rejected.csv" in sidecars
+
+
+def test_failed_symbol_leaves_no_partial_mutations(env: PriceEnv) -> None:
+    """8 (transactional). A symbol that fails after writing some rows in its
+    incremental pass has ALL of those mutations rolled back by its savepoint,
+    while healthy symbols in the same run commit normally."""
+    healthy = _seed(env, "TEST2")  # noqa: F841 - establishes a committed baseline
+    stored = _seed(env, "TEST1")
+    # TEST1 will fail the semantic guard; TEST2 stays clean this run
+    rows = steady_history(DAYS)
+    for i, d in enumerate(DAYS):
+        if d in DAYS[-5:]:
+            for col in ("open", "high", "low", "close", "adj_close"):
+                rows[i][col] = round(rows[i][col] * 0.9, 4)
+    env.provider.set_history("TEST1", rows)
+    env.provider.set_history("TEST2", steady_history(DAYS))
+
+    _, status, _, _, error_detail, outcomes = env.ingest(["TEST1", "TEST2"])
+
+    assert status is RunStatus.PARTIAL
+    assert outcomes["TEST1"].status == "failed" and outcomes["TEST2"].status == "ok"
+    assert "TEST1" in error_detail["failed_symbols"]
+    # TEST1 fully rolled back: no revisions, stored values intact
+    assert [r for r in env.revisions() if r.entity_key.startswith("TEST1/")] == []
+    assert env.prices("TEST1")[DAYS[-3]] == stored[DAYS[-3]]

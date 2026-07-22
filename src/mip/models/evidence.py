@@ -48,6 +48,7 @@ KNOWN_MODELS = (
     "earnings_behavior",
     "macro_regime",
     "relative_strength",
+    "historical_analogues",
 )
 
 HORIZONS = ("1w", "2w", "1m", "3m", "6m", "1y")
@@ -118,7 +119,8 @@ class NormalizedEvidence:
     opposing_reasons: tuple[RegimeEvidence, ...]
     active_regimes: tuple[str, ...]
     explanation: str
-    diagnostics: ScoreDiagnostics | None  # preserved verbatim; None on neutral
+    diagnostics: ScoreDiagnostics | None
+    context: dict | None = None  # preserved verbatim; None on neutral
 
     def to_dict(self) -> dict:
         return {
@@ -149,6 +151,7 @@ class NormalizedEvidence:
             # asdict, not ScoreDiagnostics.to_dict: that one rounds for CLI
             # display and the evidence contract must keep full precision
             "diagnostics": asdict(self.diagnostics) if self.diagnostics else None,
+            "context": self.context,
         }
 
     @classmethod
@@ -182,6 +185,7 @@ class NormalizedEvidence:
             active_regimes=tuple(payload["active_regimes"]),
             explanation=payload["explanation"],
             diagnostics=diagnostics,
+            context=payload.get("context"),
         )
 
 
@@ -239,6 +243,7 @@ class DefaultNormalizer(EvidenceNormalizer):
             active_regimes=tuple(score.active_regimes),
             explanation=score.explanation,
             diagnostics=diagnostics,
+            context=score.context,
         )
 
     @staticmethod

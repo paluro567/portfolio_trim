@@ -49,6 +49,7 @@ def prediction_row(assessment: TrimAssessment, instrument_id: int) -> dict[str, 
             "strongest_opposing_reason": assessment.strongest_opposing_reason,
             "concentration_flags": list(assessment.concentration_flags),
             "limitations": list(assessment.limitations),
+            "context": assessment.context,
         },
         "trim_engine_version": assessment.engine_version,
     }

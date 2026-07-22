@@ -29,6 +29,13 @@ def test_database_url() -> str:
     return url
 
 
+@pytest.fixture(autouse=True)
+def _isolated_report_root(tmp_path_factory, monkeypatch) -> None:
+    """CLI commands maintain <MIP_REPORT_ROOT>/latest/ as a side effect;
+    keep every test's writes out of the repository's real data/reports."""
+    monkeypatch.setenv("MIP_REPORT_ROOT", str(tmp_path_factory.mktemp("report_root")))
+
+
 @pytest.fixture(scope="session")
 def engine(test_database_url: str) -> Iterator[Engine]:
     settings = Settings(database_url=test_database_url, _env_file=None)

@@ -55,8 +55,10 @@ class ResearchFilter:
 
 @dataclass(frozen=True)
 class ResearchWindow:
-    """Bounds the CONDITION dates. Forward returns may extend past `end` —
-    the window selects when events happen, not when outcomes resolve."""
+    """Bounds the CONDITION dates. Forward outcomes are computed only from
+    prices observable by `end` (point-in-time alignment): windows that
+    would cross `end` yield NaN and shrink samples honestly, identical
+    to live evaluation on that date."""
 
     start: date | None = None
     end: date | None = None

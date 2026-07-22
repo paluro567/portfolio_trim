@@ -19,12 +19,46 @@ def test_writes_csv_under_category_and_name(tmp_path: Path) -> None:
     assert "100.0" in path.read_text()
 
 
-def test_refuses_overwrite(tmp_path: Path) -> None:
+def test_refuses_overwrite_with_different_content(tmp_path: Path) -> None:
     archive = RawDataArchive(tmp_path)
     archive.write("prices", "AAPL", FRAME, date(2026, 6, 1), date(2026, 6, 5), run_id=7)
 
+    changed = FRAME.assign(close=[999.0])
     with pytest.raises(PermanentError, match="refusing to overwrite"):
-        archive.write("prices", "AAPL", FRAME, date(2026, 6, 1), date(2026, 6, 5), run_id=7)
+        archive.write("prices", "AAPL", changed, date(2026, 6, 1), date(2026, 6, 5), run_id=7)
+
+
+def test_identical_content_is_deduplicated_not_overwritten(tmp_path: Path) -> None:
+    archive = RawDataArchive(tmp_path)
+    first = archive.write("prices", "AAPL", FRAME, date(2026, 6, 1), date(2026, 6, 5), run_id=7)
+    before = first.read_text()
+
+    again = archive.write("prices", "AAPL", FRAME.copy(), date(2026, 6, 1), date(2026, 6, 5), 7)
+
+    assert again == first and first.read_text() == before  # one artifact, untouched
+    assert len(list(first.parent.iterdir())) == 1
+
+
+def test_label_gives_passes_distinct_identities(tmp_path: Path) -> None:
+    archive = RawDataArchive(tmp_path)
+    incremental = archive.write(
+        "prices", "SNOW", FRAME, date(2026, 7, 20), date(2026, 7, 20), run_id=45, rejected=True
+    )
+    changed = FRAME.assign(close=[111.0])
+    full = archive.write(
+        "prices",
+        "SNOW",
+        changed,
+        date(2026, 7, 20),
+        date(2026, 7, 20),
+        run_id=45,
+        rejected=True,
+        label="full",
+    )
+
+    assert incremental.name == "2026-07-20_2026-07-20_run45.rejected.csv"
+    assert full.name == "2026-07-20_2026-07-20_run45-full.rejected.csv"
+    assert incremental.exists() and full.exists()  # neither pass lost data
 
 
 def test_rejected_sidecar_has_distinct_name(tmp_path: Path) -> None:

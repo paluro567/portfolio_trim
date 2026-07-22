@@ -18,6 +18,7 @@ personalized financial advice.
 """
 
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from datetime import UTC, date, datetime
 
 from sqlalchemy.orm import Session
@@ -133,6 +134,10 @@ class SymbolDecisionReport:
     neutral_baseline: float
     attribution_rows: tuple[RankedContribution, ...]
     narrative: str
+    # combined-state context (from the historical_analogues evidence source)
+    market_environment: dict = dataclass_field(default_factory=dict)
+    catalysts: dict = dataclass_field(default_factory=dict)
+    analogue_evidence: dict = dataclass_field(default_factory=dict)
     disclaimer: str = DISCLAIMER
 
     def to_dict(self) -> dict:
@@ -158,6 +163,9 @@ class SymbolDecisionReport:
             "neutral_baseline": self.neutral_baseline,
             "attribution_rows": [row.to_dict() for row in self.attribution_rows],
             "narrative": self.narrative,
+            "market_environment": self.market_environment,
+            "catalysts": self.catalysts,
+            "analogue_evidence": self.analogue_evidence,
             "disclaimer": self.disclaimer,
         }
 
@@ -403,6 +411,7 @@ def build_symbol_report(
         "data_quality_label": focus_assessment.data_quality_label,
         "warnings": list(focus_assessment.limitations),
     }
+    analogue_context = focus_assessment.context.get("historical_analogues", {})
     return SymbolDecisionReport(
         symbol=focus_assessment.symbol,
         as_of=focus_assessment.as_of,
@@ -425,6 +434,13 @@ def build_symbol_report(
         neutral_baseline=focus_attribution.neutral_baseline,
         attribution_rows=focus_attribution.contribution_ranking,
         narrative=_symbol_narrative(focus_assessment, strengths, risks),
+        market_environment=analogue_context.get("environment", {}),
+        catalysts=analogue_context.get("catalysts", {}),
+        analogue_evidence={
+            "analogues": analogue_context.get("analogues", []),
+            "outcomes": analogue_context.get("outcomes", {}),
+            "insufficient": analogue_context.get("insufficient"),
+        },
     )
 
 
@@ -668,6 +684,74 @@ def _md_row(cells: list[str]) -> str:
     return "| " + " | ".join(cells) + " |"
 
 
+def _context_section_lines(report: SymbolDecisionReport) -> list[str]:
+    """MARKET ENVIRONMENT / CATALYSTS / ANALOGUE EVIDENCE lines — every
+    value verbatim from the historical_analogues context; unavailable data
+    is labeled, never invented."""
+    lines: list[str] = []
+    env = report.market_environment
+    if env:
+        parts = [f"{k.replace('_', ' ')}: {v}" for k, v in env.items() if isinstance(v, str)]
+        numbers = [
+            f"{k.replace('_', ' ')} {v:.2f}"
+            for k, v in env.items()
+            if isinstance(v, (int, float)) and v is not None
+        ]
+        lines += ["", "MARKET ENVIRONMENT:"]
+        if parts:
+            lines.append("  " + "; ".join(parts))
+        if numbers:
+            lines.append("  " + "; ".join(numbers))
+    cat = report.catalysts
+    if cat is not None:
+        lines += ["", "CATALYSTS:"]
+        until = cat.get("days_until_earnings")
+        since = cat.get("days_since_earnings")
+        surprise = cat.get("eps_surprise")
+        lines.append(
+            "  next earnings: "
+            + (f"in {until:.0f} calendar days (confirmed)" if until is not None else "unavailable")
+        )
+        lines.append(
+            "  last earnings: "
+            + (f"{since:.0f} calendar days ago" if since is not None else "unavailable")
+            + (f"; last EPS surprise {surprise * 100:+.1f}%" if surprise is not None else "")
+        )
+    ana = report.analogue_evidence
+    if ana:
+        lines += ["", "HISTORICAL ANALOGUES (combined market/sector/company/catalyst state):"]
+        if ana.get("insufficient"):
+            lines.append(f"  none — {ana['insufficient']}")
+        for a in (ana.get("analogues") or [])[:5]:
+            sector = f"{a['sector']:.2f}" if a.get("sector") is not None else "—"
+            catalysts = f"{a['catalysts']:.2f}" if a.get("catalysts") is not None else "—"
+            lines.append(
+                f"  {a['date']}  overall {a['overall']:.2f}  "
+                f"(market {a['market']:.2f}, sector {sector}, "
+                f"company {a['company']:.2f}, catalysts {catalysts})"
+            )
+        out = ana.get("outcomes") or {}
+        if out.get("n"):
+            beat = (
+                f", {out['p_beat_spy'] * 100:.0f}% beat SPY"
+                if out.get("p_beat_spy") is not None
+                else ""
+            )
+            lines.append(
+                f"  outcome distribution ({out['horizon']}, n={out['n']}): "
+                f"weighted mean {out['weighted_mean_return'] * 100:+.2f}%, "
+                f"median {out['median_return'] * 100:+.2f}%, "
+                f"{out['p_positive'] * 100:.0f}% positive{beat}"
+            )
+            lines.append(
+                f"  band p10 {out['p10'] * 100:+.1f}% / p25 {out['p25'] * 100:+.1f}% / "
+                f"p75 {out['p75'] * 100:+.1f}% / p90 {out['p90'] * 100:+.1f}%; "
+                f"median max drawdown {out['median_max_drawdown'] * 100:.1f}%; "
+                f"baseline {out['baseline_mean'] * 100:+.2f}%"
+            )
+    return lines
+
+
 def render_symbol_text(report: SymbolDecisionReport) -> str:
     lines = [f"{report.symbol} — decision report (as of {report.as_of})"]
     if report.portfolio_name:
@@ -727,6 +811,7 @@ def render_symbol_text(report: SymbolDecisionReport) -> str:
     lines.append(f"  omitted: {', '.join(u['omitted_models']) or 'none'}")
     lines += [f"  - {warning}" for warning in u["warnings"]]
 
+    lines += _context_section_lines(report)
     lines += ["", f"ATTRIBUTION ({report.focus_horizon} — sums exactly to the trim score):"]
     lines.append(f"  {'neutral baseline':<28} {'':>8} {report.neutral_baseline:>8.2f}")
     for item in report.attribution_rows:
@@ -806,6 +891,10 @@ def render_symbol_markdown(report: SymbolDecisionReport) -> str:
     lines.append(f"- neutral: {', '.join(u['neutral_models']) or 'none'}")
     lines.append(f"- omitted: {', '.join(u['omitted_models']) or 'none'}")
     lines += [f"- {warning}" for warning in u["warnings"]]
+    context_lines = _context_section_lines(report)
+    if context_lines:
+        lines += ["", "## Combined-State Context", ""]
+        lines += ["```"] + [line for line in context_lines if line] + ["```"]
     lines += [
         "",
         f"## Attribution ({report.focus_horizon})",

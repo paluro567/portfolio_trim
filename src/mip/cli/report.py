@@ -21,6 +21,22 @@ def _pick_format(as_json: bool, markdown: bool) -> str:
     return "json" if as_json else "markdown" if markdown else "text"
 
 
+_EXTENSION = {"json": "json", "markdown": "md", "text": "txt"}
+
+
+def _publish_latest(filename: str, content: str) -> None:
+    """Refresh <report_root>/latest/<filename> after a fully successful
+    run — best-effort, so a persistence hiccup never fails a report that
+    was already printed."""
+    from mip.core.config import get_settings
+    from mip.reporting.latest import publish_latest
+
+    try:
+        publish_latest(get_settings().report_root, filename, content)
+    except OSError as exc:
+        typer.echo(f"(warning: latest report not updated: {exc})", err=True)
+
+
 def _options(horizon: str, top: int, min_confidence: float):
     from mip.engine.report import ReportOptions
 
@@ -61,18 +77,21 @@ def symbol_report(
     from mip.engine.report import build_symbol_report, render_symbol_markdown, render_symbol_text
 
     fmt = _pick_format(as_json, markdown)
+    canonical = symbol.strip().upper()
     factory = open_session_factory()
     with session_scope(factory) as session:
         pairs = AttributionEngine(session).assessed(symbols=[symbol], portfolio=portfolio)
-        symbol_pairs = pairs[symbol.strip().upper()]
+        symbol_pairs = pairs[canonical]
         report = build_symbol_report(symbol_pairs, _options(horizon, top, min_confidence))
         _archive(session, [a for a, _ in symbol_pairs], no_archive)
         if fmt == "json":
-            typer.echo(json_lib.dumps(report.to_dict(), indent=2))
+            payload = json_lib.dumps(report.to_dict(), indent=2)
         elif fmt == "markdown":
-            typer.echo(render_symbol_markdown(report))
+            payload = render_symbol_markdown(report)
         else:
-            typer.echo(render_symbol_text(report))
+            payload = render_symbol_text(report)
+        typer.echo(payload)
+    _publish_latest(f"{canonical}_decision.{_EXTENSION[fmt]}", payload)
 
 
 @app.command("portfolio")
@@ -106,8 +125,36 @@ def portfolio_report(
         )
         _archive(session, [a for pairs in by_symbol.values() for a, _ in pairs], no_archive)
         if fmt == "json":
-            typer.echo(json_lib.dumps(report.to_dict(), indent=2))
+            payload = json_lib.dumps(report.to_dict(), indent=2)
         elif fmt == "markdown":
-            typer.echo(render_portfolio_markdown(report))
+            payload = render_portfolio_markdown(report)
         else:
-            typer.echo(render_portfolio_text(report))
+            payload = render_portfolio_text(report)
+        typer.echo(payload)
+    _publish_latest(f"Portfolio.{_EXTENSION[fmt]}", payload)
+
+
+@app.command("institutional")
+def institutional_report(
+    symbol: str = typer.Argument(..., help="Holding to research."),
+    portfolio: str = typer.Option(None, "--portfolio", help="Portfolio context."),
+    as_json: bool = typer.Option(False, "--json", help="Machine-readable intelligence object."),
+) -> None:
+    """Institutional research report for one holding: thematic evidence
+    sections, bull/bear theses, key drivers, what changed, unknowns, and a
+    fully explained recommendation — from the Portfolio Intelligence Engine."""
+    from mip.engine.intelligence import PortfolioIntelligenceEngine, render_institutional
+
+    canonical = symbol.strip().upper()
+    factory = open_session_factory()
+    with session_scope(factory) as session:
+        results = PortfolioIntelligenceEngine(session).evaluate(
+            symbols=[symbol], portfolio=portfolio
+        )
+        intelligence = results[canonical]
+        if as_json:
+            payload = json_lib.dumps(intelligence.to_dict(), indent=2)
+        else:
+            payload = render_institutional(intelligence)
+        typer.echo(payload)
+    _publish_latest(f"{canonical}.{'json' if as_json else 'md'}", payload)

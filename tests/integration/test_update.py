@@ -109,6 +109,18 @@ def test_full_run_success_then_idempotent_rerun(portfolio_env, tmp_path) -> None
     assert (base / "portfolio" / "main.md").is_file()
     assert (base / "portfolio" / "main.json").is_file()
     assert (base / "symbols" / "AAA.md").is_file()
+
+    # the run also refreshed the stable latest/ view with identical content
+    latest = tmp_path / "reports" / "latest"
+    assert (latest / "Portfolio.md").read_text().rstrip("\n") == (
+        (base / "portfolio" / "main.md").read_text().rstrip("\n")
+    )
+    assert (latest / "AAA_decision.md").read_text().rstrip("\n") == (
+        (base / "symbols" / "AAA.md").read_text().rstrip("\n")
+    )
+    assert (latest / "Portfolio.json").is_file()
+    assert result.stages["reports"]["detail"]["latest"] == 6  # portfolio + 2 symbols, md+json
+
     manifest = json.loads((base / "run_manifest.json").read_text())
     assert manifest["status"] == "success"
     assert "postgresql" not in json.dumps(manifest).lower()

@@ -50,7 +50,12 @@ def test_end_to_end_combination_with_portfolio_context(portfolio_env, tmp_path) 
         items = results["AAA"]
         assert [e.horizon for e in items] == list(HORIZONS)
         for e in items:
-            classified = set(e.participating_models) | set(e.neutral_models) | set(e.omitted_models)
+            classified = (
+                set(e.participating_models)
+                | set(e.neutral_models)
+                | set(e.omitted_models)
+                | set(e.shadow_models)
+            )
             assert classified == set(KNOWN_MODELS)  # every model accounted for
             assert 0.0 <= e.combined_confidence <= 1.0
             assert 0.0 <= e.evidence_strength <= 1.0

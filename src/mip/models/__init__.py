@@ -3,6 +3,7 @@ store and the Historical Research Engine (architecture Phase 9 shape).
 Models: Interest Rate Sensitivity, Sector Rotation, Momentum Exhaustion,
 Valuation, Earnings Behavior, Macro Regime, Relative Strength."""
 
+from mip.models.analogues import HistoricalAnalogueModel
 from mip.models.base import (
     Z_CLIP,
     IntelligenceModel,
@@ -35,9 +36,11 @@ ALL_MODELS = (
     EarningsBehaviorModel,
     MacroRegimeModel,
     RelativeStrengthModel,
+    HistoricalAnalogueModel,
 )
 
 __all__ = [
+    "HistoricalAnalogueModel",
     "ALL_MODELS",
     "Z_CLIP",
     "combine_evidence",

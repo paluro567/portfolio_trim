@@ -96,6 +96,12 @@ class ResearchEngine:
 
     def run(self, query: ResearchQuery) -> ResearchResult:
         prices = self._load_adj_close(query.symbol)
+        if query.window.end is not None:
+            # PIT alignment: forward outcomes may use only prices observable
+            # by the window end — evaluate(as_of=T) must equal what live
+            # inference produced on T (windows crossing T yield NaN and
+            # shrink samples honestly, exactly as they do live).
+            prices = prices.loc[: pd.Timestamp(query.window.end)]
         if prices.empty:
             raise ConfigurationError(f"no prices stored for {query.symbol!r}")
 

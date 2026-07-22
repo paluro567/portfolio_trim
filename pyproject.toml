@@ -63,8 +63,12 @@ select = ["E", "W", "F", "I", "B", "UP", "N"]
 "tests/integration/test_trim.py" = ["F811"]
 "tests/integration/test_attribution.py" = ["F811"]
 "tests/integration/test_evaluation.py" = ["F811"]
+"tests/integration/test_pit_alignment.py" = ["F811"]
+"tests/integration/test_intelligence_engine.py" = ["F811"]
+"tests/integration/test_analogues.py" = ["F811"]
 "tests/integration/test_update.py" = ["F811"]
 "tests/integration/test_report.py" = ["F811"]
+"tests/integration/test_latest_reports.py" = ["F811"]
 
 [tool.black]
 line-length = 100

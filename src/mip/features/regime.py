@@ -75,3 +75,42 @@ class RegimeRates(FeatureCalculator):
         else:
             signal = change < -threshold
         return signal.astype(float).where(change.notna())
+
+
+class SectorBreadth(FeatureCalculator):
+    """Share of sector ETFs trading above their 50-session moving average —
+    a cross-sectional market-breadth measure built entirely from data the
+    pipeline already loads."""
+
+    def __init__(self, window: int = 50) -> None:
+        super().__init__(
+            FeatureSpec(
+                name="sector_breadth_ma50",
+                version=1,
+                scope=FeatureScope.MARKET,
+                description=(
+                    "Share of the sector ETFs above their 50-session moving average "
+                    "(market breadth)"
+                ),
+                params={"window": window, "universe": "sector ETFs"},
+                uses_adjusted_prices=True,
+                lookback_sessions=60,
+            )
+        )
+
+    def compute(self, ctx: FeatureContext) -> pd.Series:
+        window = int(self.spec.params["window"])
+        flags = []
+        for symbol, frame in sorted(ctx.benchmarks.items()):
+            if symbol == "SPY":
+                continue  # breadth of the sectors, not the index itself
+            closes = frame["adj_close"]
+            ma = closes.rolling(window).mean()
+            flags.append((closes > ma).astype(float).where(ma.notna()).reindex(ctx.dates))
+        if not flags:
+            return pd.Series(float("nan"), index=ctx.dates)
+        stacked = pd.concat(flags, axis=1)
+        # require at least half the sector panel to be computable
+        counts = stacked.notna().sum(axis=1)
+        breadth = stacked.mean(axis=1)
+        return breadth.where(counts >= max(1, stacked.shape[1] // 2))

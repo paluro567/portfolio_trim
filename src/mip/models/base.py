@@ -426,6 +426,7 @@ class ModelScore:
     diagnostics: ScoreDiagnostics | None = None  # None on neutral paths
     baseline_return: float | None = None  # precision-weighted unconditional mean
     excess_return: float | None = None  # expected_return - baseline_return
+    context: dict | None = None  # structured model context (e.g. analogue detail)
 
     def to_dict(self) -> dict:
         return {

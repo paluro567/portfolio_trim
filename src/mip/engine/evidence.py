@@ -44,7 +44,7 @@ contract):
   traceable to the originating models.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 from sqlalchemy.orm import Session
@@ -62,6 +62,13 @@ from mip.models import (
 from mip.portfolio.analytics import PortfolioAnalyzer, PortfolioPositionAssessment
 
 HORIZONS = ("1w", "2w", "1m", "3m", "6m", "1y")
+
+# Evidence computed and reported but EXCLUDED from the official combined
+# score, per the analogue v1 out-of-sample validation and the hardened
+# (leakage-free) revalidation: shadow evidence is informational only and
+# must never influence recommendations. Promotion requires passing
+# docs/VALIDATION_GATES.md.
+SHADOW_MODELS = frozenset({"historical_analogues"})
 PRIOR_EVENTS = 30.0  # effective events for confidence 0.5 (platform-wide)
 
 # Declared cross-model correlation priors (uncertainty inflation, not
@@ -73,6 +80,20 @@ OVERLAPPING_PAIRS = (
     frozenset({"interest_rate_sensitivity", "macro_regime"}),
     frozenset({"sector_rotation", "relative_strength"}),
     frozenset({"momentum_exhaustion", "relative_strength"}),
+    # the analogue model reuses the same feature information as every
+    # regime model, so every pairing gets the conservative overlap prior
+    *(
+        frozenset({"historical_analogues", other})
+        for other in (
+            "interest_rate_sensitivity",
+            "sector_rotation",
+            "momentum_exhaustion",
+            "valuation",
+            "earnings_behavior",
+            "macro_regime",
+            "relative_strength",
+        )
+    ),
 )
 
 
@@ -171,6 +192,8 @@ class DecisionEvidence:
     strongest_opposing_reason: dict | None
     evidence_breakdown: tuple[ModelContribution, ...]
     diagnostics: DecisionDiagnostics | None
+    shadow_models: tuple[str, ...] = ()  # informational only; never in the score
+    model_context: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -189,6 +212,7 @@ class DecisionEvidence:
             "effective_sample_size": self.effective_sample_size,
             "participating_models": list(self.participating_models),
             "neutral_models": list(self.neutral_models),
+            "shadow_models": list(self.shadow_models),
             "omitted_models": list(self.omitted_models),
             "portfolio_name": self.portfolio_name,
             "portfolio_weight": self.portfolio_weight,
@@ -201,6 +225,7 @@ class DecisionEvidence:
             "strongest_opposing_reason": self.strongest_opposing_reason,
             "evidence_breakdown": [c.to_dict() for c in self.evidence_breakdown],
             "diagnostics": self.diagnostics.to_dict() if self.diagnostics else None,
+            "model_context": self.model_context,
         }
 
 
@@ -236,11 +261,16 @@ def combine_model_evidence(
     per_model: dict[str, NormalizedEvidence],
     omitted: tuple[str, ...] = (),
     assessment: PortfolioPositionAssessment | None = None,
+    shadow: frozenset[str] = SHADOW_MODELS,
 ) -> DecisionEvidence:
     """The reusable combination: NormalizedEvidence per model in, one
     DecisionEvidence out. Pure — no database, no side effects."""
-    participating = {m: e for m, e in per_model.items() if _usable(e)}
-    neutral = tuple(sorted(set(per_model) - set(participating)))
+    shadow_map = {m: e for m, e in per_model.items() if m in shadow}
+    official = {m: e for m, e in per_model.items() if m not in shadow}
+    participating = {m: e for m, e in official.items() if _usable(e)}
+    model_context = {m: e.context for m, e in per_model.items() if e.context}
+    shadow_models = tuple(sorted(shadow_map))
+    neutral = tuple(sorted(set(official) - set(participating)))
     portfolio_fields = {
         "portfolio_name": assessment.portfolio_name if assessment else None,
         "portfolio_weight": assessment.portfolio_weight if assessment else None,
@@ -268,6 +298,7 @@ def combine_model_evidence(
             effective_sample_size=0.0,
             participating_models=(),
             neutral_models=neutral,
+            shadow_models=shadow_models,
             omitted_models=tuple(sorted(omitted)),
             dominant_positive_models=(),
             dominant_negative_models=(),
@@ -275,6 +306,7 @@ def combine_model_evidence(
             strongest_opposing_reason=None,
             evidence_breakdown=(),
             diagnostics=None,
+            model_context=model_context,
             **portfolio_fields,
         )
 
@@ -362,6 +394,7 @@ def combine_model_evidence(
         effective_sample_size=max_n_eff,
         participating_models=tuple(names),
         neutral_models=neutral,
+        shadow_models=shadow_models,
         omitted_models=tuple(sorted(omitted)),
         dominant_positive_models=tuple(c.model for c in positive),
         dominant_negative_models=tuple(c.model for c in negative),
@@ -369,6 +402,7 @@ def combine_model_evidence(
         strongest_opposing_reason=strongest("opposing_reasons", False),
         evidence_breakdown=breakdown,
         diagnostics=diagnostics,
+        model_context=model_context,
         **portfolio_fields,
     )
 
@@ -404,12 +438,12 @@ class DecisionEvidenceEngine:
             for symbol in symbols
         }
 
-    def _assess_symbol(
-        self,
-        symbol: str,
-        assessment: PortfolioPositionAssessment | None,
-        as_of: date | None,
-    ) -> list[DecisionEvidence]:
+    def gather(
+        self, symbol: str, as_of: date | None = None
+    ) -> tuple[dict[str, dict[str, NormalizedEvidence]], tuple[str, ...], date]:
+        """One model pass: every model's normalized evidence per horizon,
+        the omitted models, and the resolved as_of — the raw material for
+        both the combination below and the Portfolio Intelligence Engine."""
         by_model: dict[str, dict[str, NormalizedEvidence]] = {}
         omitted: list[str] = []
         latest_as_of: date | None = as_of
@@ -425,14 +459,22 @@ class DecisionEvidenceEngine:
                 latest_as_of = resolved
         if latest_as_of is None:
             raise ConfigurationError(f"no model could evaluate {symbol!r}")
+        return by_model, tuple(sorted(omitted)), latest_as_of
 
+    def _assess_symbol(
+        self,
+        symbol: str,
+        assessment: PortfolioPositionAssessment | None,
+        as_of: date | None,
+    ) -> list[DecisionEvidence]:
+        by_model, omitted, latest_as_of = self.gather(symbol, as_of)
         return [
             combine_model_evidence(
                 symbol,
                 horizon,
                 latest_as_of,
                 {m: horizons[horizon] for m, horizons in by_model.items()},
-                omitted=tuple(sorted(omitted)),
+                omitted=omitted,
                 assessment=assessment,
             )
             for horizon in HORIZONS

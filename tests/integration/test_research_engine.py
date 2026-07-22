@@ -112,18 +112,37 @@ def test_multiple_filters_are_anded(env) -> None:
     assert result.event_dates == (VIX_EVENT,)  # spike day inside the rising episode
 
 
-def test_window_bounds_events_not_outcomes(env) -> None:
+def test_window_end_embargoes_outcomes(env) -> None:
+    """PIT alignment (validation hardening): outcomes may use only prices
+    observable by window.end — an event whose forward window would cross
+    the end yields NaN and is dropped from that horizon's sample, exactly
+    as it would be in live evaluation on that date. (This replaces the
+    former `test_window_bounds_events_not_outcomes`, which pinned the
+    leaky pre-hardening semantics.)"""
     build(env, ["TEST1"])
-    result = run_query(
+    crossing = run_query(
         env,
         "TEST1",
         (ResearchFilter("vix_level", ">", 25.0),),
         window=ResearchWindow(start=date(2026, 6, 1), end=date(2026, 6, 3)),
         horizons=(21,),
     )
-    # event inside the window; its 21-session outcome resolves after window.end
-    assert result.event_dates == (VIX_EVENT,)
-    assert result.metrics[21].sample_size == 1
+    # the event is still selected (the window bounds CONDITION dates) ...
+    assert crossing.event_dates == (VIX_EVENT,)
+    # ... but its 21-session outcome was not observable by 2026-06-03
+    assert crossing.metrics[21].sample_size == 0
+
+    # once the scoring date is late enough for the window to have resolved,
+    # the same event's outcome counts again
+    resolved = run_query(
+        env,
+        "TEST1",
+        (ResearchFilter("vix_level", ">", 25.0),),
+        window=ResearchWindow(start=date(2026, 6, 1), end=None),
+        horizons=(21,),
+    )
+    assert resolved.event_dates == (VIX_EVENT,)
+    assert resolved.metrics[21].sample_size == 1
 
 
 def test_eps_surprise_beat_is_pit_safe(env) -> None:
