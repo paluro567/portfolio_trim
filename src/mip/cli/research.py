@@ -7,11 +7,13 @@ from pathlib import Path
 import typer
 
 from mip.cli._deps import open_session_factory
+from mip.cli.experiment import app as experiment_app
 from mip.core.db import session_scope
 
 app = typer.Typer(
     help="Historical research engine (query, describe, export).", no_args_is_help=True
 )
+app.add_typer(experiment_app, name="experiment")
 
 FILTER_HELP = (
     "Condition '<feature> <op> <value>', e.g. 'vix_level > 25'. Repeatable (ANDed). "

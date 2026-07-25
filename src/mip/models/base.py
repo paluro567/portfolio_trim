@@ -36,16 +36,22 @@ import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
-from statistics import NormalDist
 
-import numpy as np
 import pandas as pd
 
 from mip.research.query import OPERATORS
 
-_NORMAL = NormalDist()
-Z_CLIP = 4.0
-_SESSIONS_TO_DAYS = 7.0 / 5.0  # trading sessions -> calendar days for the kernel
+# Shared research statistics primitives now live once at the research layer
+# (mip.research.statistics). Re-imported here so every existing consumer of
+# mip.models.base / mip.models keeps its imports unchanged.
+from mip.research.statistics import (
+    Z_CLIP,
+    combine_evidence,
+    confidence_from_evidence,
+    cross_regime_correlation,
+    overlap_inflation,
+    score_from_z,
+)
 
 
 @dataclass(frozen=True)
@@ -88,117 +94,6 @@ def recency_weighted_stats(
         first_event=clean.index.min().date(),
         last_event=clean.index.max().date(),
     )
-
-
-# -- overlap geometry (Bartlett kernel over event dates) -----------------------
-
-
-def _gram(a: np.ndarray, b: np.ndarray, horizon_days: float) -> float:
-    """Σ_ij max(0, 1 - |a_i - b_j| / horizon_days): total kernel mass
-    between two event-date sets (ordinals). The Bartlett kernel is the
-    correlation of two overlapping sums of iid daily innovations."""
-    gaps = np.abs(np.subtract.outer(a, b))
-    return float(np.clip(1.0 - gaps / horizon_days, 0.0, None).sum())
-
-
-def _ordinals(dates: Sequence[date]) -> np.ndarray:
-    return np.array([d.toordinal() for d in dates], dtype=float)
-
-
-def overlap_inflation(dates: Sequence[date], horizon_sessions: int) -> float:
-    """Variance inflation factor for the mean of forward returns whose
-    windows overlap: Var(mean) = iid variance × Σ_ij K / n. 1.0 = events
-    fully independent; approaches n when all windows coincide. Sessions are
-    converted to calendar days at 7/5 for the kernel width."""
-    if len(dates) <= 1:
-        return 1.0
-    ords = _ordinals(dates)
-    return _gram(ords, ords, horizon_sessions * _SESSIONS_TO_DAYS) / len(dates)
-
-
-def cross_regime_correlation(
-    dates_a: Sequence[date], dates_b: Sequence[date], horizon_sessions: int
-) -> float:
-    """Correlation between two studies' mean-return estimators induced by
-    shared or nearby event windows: a normalized Gram entry, <= 1 by
-    Cauchy-Schwarz (the Bartlett kernel is positive semidefinite)."""
-    if not len(dates_a) or not len(dates_b):
-        return 0.0
-    horizon_days = horizon_sessions * _SESSIONS_TO_DAYS
-    a, b = _ordinals(dates_a), _ordinals(dates_b)
-    return _gram(a, b, horizon_days) / math.sqrt(
-        _gram(a, a, horizon_days) * _gram(b, b, horizon_days)
-    )
-
-
-@dataclass(frozen=True)
-class CombinedEvidence:
-    effect: float  # inverse-variance-weighted effect estimate
-    se: float
-    z: float  # effect / se, clipped to ±Z_CLIP
-    agreement: float  # precision-weighted share of studies agreeing in sign
-    z_raw: float  # effect / se before clipping (diagnostics)
-
-
-def combine_evidence(
-    effects: list[float],
-    ses: list[float],
-    correlation: Sequence[Sequence[float]] | None = None,
-) -> CombinedEvidence | None:
-    """Fixed-effect meta-analysis: weight = 1/se². `correlation` is the
-    cross-study correlation matrix of the estimators (None = identity =
-    independent studies); the combined variance is the full quadratic form
-    w'Cw/(Σw)², so correlated studies do not fake precision. z is clipped
-    to ±Z_CLIP as a reporting bound (z_raw keeps the unclipped value)."""
-    if len(effects) != len(ses):
-        raise ValueError("effects and ses must have equal length")
-    kept = [i for i, s in enumerate(ses) if s > 0]
-    if not kept:
-        return None
-    effect_values = [effects[i] for i in kept]
-    se_values = [ses[i] for i in kept]
-    weights = [1.0 / s**2 for s in se_values]
-    total = sum(weights)
-    effect = sum(w * e for w, e in zip(weights, effect_values, strict=True)) / total
-    if correlation is None:
-        variance = 1.0 / total
-    else:
-        variance = (
-            sum(
-                weights[i]
-                * weights[j]
-                * float(correlation[kept[i]][kept[j]])
-                * se_values[i]
-                * se_values[j]
-                for i in range(len(kept))
-                for j in range(len(kept))
-            )
-            / total**2
-        )
-    se = math.sqrt(variance)
-    z_raw = effect / se
-    z = max(-Z_CLIP, min(Z_CLIP, z_raw))
-    sign = 1.0 if effect >= 0 else -1.0
-    agreement = (
-        sum(w for w, e in zip(weights, effect_values, strict=True) if math.copysign(1, e) == sign)
-        / total
-    )
-    return CombinedEvidence(effect=effect, se=se, z=z, agreement=agreement, z_raw=z_raw)
-
-
-def score_from_z(z: float) -> float:
-    """0-100 via the normal CDF: 50 = no edge, 84 ≈ one sigma positive."""
-    return 100.0 * _NORMAL.cdf(z)
-
-
-def confidence_from_evidence(max_n_eff: float, agreement: float, prior_events: float) -> float:
-    """Confidence 0-1 = evidence volume × cross-study consistency.
-    The volume term n/(n+prior) is Bayesian shrinkage toward 'no evidence';
-    `prior_events` says how many effective events it takes to earn 0.5.
-    max (not sum) of per-study n_eff avoids double-counting overlapping
-    studies of the same days."""
-    volume = max_n_eff / (max_n_eff + prior_events)
-    return max(0.0, min(1.0, volume * agreement))
 
 
 @dataclass(frozen=True)

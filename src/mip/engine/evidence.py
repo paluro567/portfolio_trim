@@ -68,7 +68,7 @@ HORIZONS = ("1w", "2w", "1m", "3m", "6m", "1y")
 # (leakage-free) revalidation: shadow evidence is informational only and
 # must never influence recommendations. Promotion requires passing
 # docs/VALIDATION_GATES.md.
-SHADOW_MODELS = frozenset({"historical_analogues"})
+SHADOW_MODELS = frozenset({"historical_analogues", "conditional_probability"})
 PRIOR_EVENTS = 30.0  # effective events for confidence 0.5 (platform-wide)
 
 # Declared cross-model correlation priors (uncertainty inflation, not
@@ -92,6 +92,21 @@ OVERLAPPING_PAIRS = (
             "earnings_behavior",
             "macro_regime",
             "relative_strength",
+        )
+    ),
+    # the conditional probability engine pools the same feature conditions as
+    # every model, so every pairing gets the conservative overlap prior
+    *(
+        frozenset({"conditional_probability", other})
+        for other in (
+            "interest_rate_sensitivity",
+            "sector_rotation",
+            "momentum_exhaustion",
+            "valuation",
+            "earnings_behavior",
+            "macro_regime",
+            "relative_strength",
+            "historical_analogues",
         )
     ),
 )

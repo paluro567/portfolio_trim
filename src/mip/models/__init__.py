@@ -13,6 +13,7 @@ from mip.models.base import (
     confidence_from_evidence,
     score_from_z,
 )
+from mip.models.conditional import ConditionalProbabilityModel
 from mip.models.earnings import EarningsBehaviorModel
 from mip.models.evidence import (
     EvidenceNormalizer,
@@ -37,10 +38,12 @@ ALL_MODELS = (
     MacroRegimeModel,
     RelativeStrengthModel,
     HistoricalAnalogueModel,
+    ConditionalProbabilityModel,
 )
 
 __all__ = [
     "HistoricalAnalogueModel",
+    "ConditionalProbabilityModel",
     "ALL_MODELS",
     "Z_CLIP",
     "combine_evidence",

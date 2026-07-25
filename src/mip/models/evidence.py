@@ -49,6 +49,7 @@ KNOWN_MODELS = (
     "macro_regime",
     "relative_strength",
     "historical_analogues",
+    "conditional_probability",
 )
 
 HORIZONS = ("1w", "2w", "1m", "3m", "6m", "1y")
