@@ -24,7 +24,9 @@ from mip.cli.portfolio import app as portfolio_app
 from mip.cli.quality import app as quality_app
 from mip.cli.report import app as report_app
 from mip.cli.research import app as research_app
+from mip.cli.research_data import app as research_data_app
 from mip.cli.runs import app as runs_app
+from mip.cli.securities import app as securities_app
 from mip.cli.trim import app as trim_app
 from mip.cli.universe import app as universe_app
 from mip.cli.update import update as update_command
@@ -44,9 +46,11 @@ app.add_typer(macro_app, name="macro")
 app.add_typer(earnings_app, name="earnings")
 app.add_typer(features_app, name="features")
 app.add_typer(research_app, name="research")
+app.add_typer(research_data_app, name="research-data")
 app.add_typer(intelligence_app, name="intelligence")
 app.add_typer(runs_app, name="runs")
 app.add_typer(quality_app, name="quality")
+app.add_typer(securities_app, name="securities")
 app.add_typer(portfolio_app, name="portfolio")
 app.add_typer(decision_app, name="decision")
 app.add_typer(trim_app, name="trim")

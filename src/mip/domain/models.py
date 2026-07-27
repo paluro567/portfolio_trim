@@ -39,14 +39,29 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from mip.domain.enums import (
     CorporateActionType,
     CostBasisMethod,
+    DivergenceClass,
+    ExperimentDecision,
+    ExperimentRunStatus,
     FeatureScope,
     GainTerm,
+    IdentifierType,
+    IdentityWorld,
     InstrumentType,
     IssueSeverity,
     IssueStatus,
+    LifecycleEventType,
+    MappingMethod,
+    MappingStatus,
+    OutcomeStatus,
+    ParityReviewStatus,
+    ReturnStatus,
     RunStatus,
     RunType,
+    SecurityType,
+    SnapshotStatus,
+    TerminalRule,
     TxnType,
+    UniverseStatus,
 )
 
 
@@ -572,3 +587,680 @@ class PredictionOutcome(Base):
     )
 
     prediction: Mapped[Prediction] = relationship()
+
+
+# ============================================================================
+# Phase 1 — Point-in-time security master & universe integrity (§ EVALUATION_
+# FOUNDATION_DESIGN). Survivorship-clean historical identity: a security is
+# keyed by a permanent internal `security_id`, NEVER by its ticker. Delisted,
+# acquired, bankrupt, renamed, and share-class-split securities all persist.
+# Nothing here touches production scoring; these tables carry their own source
+# lineage + data_version for reproducibility.
+# ============================================================================
+
+
+class SecurityMaster(Base):
+    """One persistent economic security across its whole lifecycle.
+
+    Surrogate key: `security_id` (the permanent internal identity). Natural key:
+    (source, source_security_id) — a given vendor's permanent record maps to
+    exactly one security_id, which is the idempotency + resolution anchor."""
+
+    __tablename__ = "security_master"
+    __table_args__ = (
+        UniqueConstraint("source", "source_security_id", name="uq_security_master_source_id"),
+        Index("ix_security_master_active", "active_flag"),
+        CheckConstraint(
+            "delisting_date IS NULL OR first_trade_date IS NULL "
+            "OR delisting_date >= first_trade_date",
+            name="delist_after_list",
+        ),
+    )
+
+    security_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    issuer_id: Mapped[int | None] = mapped_column(BigInteger)  # issuer modelling deferred
+    security_type: Mapped[SecurityType] = mapped_column(_text_enum(SecurityType, "security_type_e"))
+    share_class: Mapped[str | None] = mapped_column(Text)
+    country: Mapped[str | None] = mapped_column(Text)
+    currency: Mapped[str] = mapped_column(Text, default="USD", server_default="USD")
+    primary_exchange: Mapped[str | None] = mapped_column(Text)
+    first_trade_date: Mapped[date | None] = mapped_column(Date)
+    last_trade_date: Mapped[date | None] = mapped_column(Date)
+    active_flag: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    delisted_flag: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    delisting_date: Mapped[date | None] = mapped_column(Date)
+    delisting_reason: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(Text)
+    source_security_id: Mapped[str] = mapped_column(Text)
+    valid_from: Mapped[date | None] = mapped_column(Date)
+    valid_to: Mapped[date | None] = mapped_column(Date)
+    ingestion_run_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ingestion_runs.id")
+    )
+    data_version: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SecurityIdentifierHistory(Base):
+    """Time-bounded external identifiers (ticker/CUSIP/ISIN/FIGI/vendor). Ticker
+    reuse by a different security across time is supported; a ticker lookup
+    ALWAYS carries an as-of date. No overlapping validity for the same
+    (security, identifier_type) — the PK enforces one interval per valid_from."""
+
+    __tablename__ = "security_identifier_history"
+    __table_args__ = (Index("ix_sec_ident_lookup", "identifier_type", "identifier_value"),)
+
+    security_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("security_master.security_id"), primary_key=True
+    )
+    identifier_type: Mapped[IdentifierType] = mapped_column(
+        _text_enum(IdentifierType, "identifier_type_e"), primary_key=True
+    )
+    valid_from: Mapped[date] = mapped_column(Date, primary_key=True)
+    identifier_value: Mapped[str] = mapped_column(Text)
+    exchange: Mapped[str | None] = mapped_column(Text)
+    valid_to: Mapped[date | None] = mapped_column(Date)  # NULL = current
+    is_primary: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    source: Mapped[str] = mapped_column(Text)
+    ingestion_run_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ingestion_runs.id")
+    )
+    data_version: Mapped[str] = mapped_column(Text)
+
+
+class SecurityLifecycleEvent(Base):
+    """Events affecting historical identity or eligibility, recorded point-in-
+    time. Successor/predecessor link corporate reorganizations across ids."""
+
+    __tablename__ = "security_lifecycle_event"
+    __table_args__ = (
+        UniqueConstraint("security_id", "event_type", "effective_date", name="uq_lifecycle_event"),
+        CheckConstraint(
+            "successor_security_id IS NULL OR successor_security_id <> security_id",
+            name="successor_not_self",
+        ),
+    )
+
+    event_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    security_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("security_master.security_id"))
+    event_type: Mapped[LifecycleEventType] = mapped_column(
+        _text_enum(LifecycleEventType, "lifecycle_event_type_e")
+    )
+    effective_date: Mapped[date] = mapped_column(Date)
+    announcement_date: Mapped[date | None] = mapped_column(Date)
+    successor_security_id: Mapped[int | None] = mapped_column(BigInteger)
+    predecessor_security_id: Mapped[int | None] = mapped_column(BigInteger)
+    details: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    source: Mapped[str] = mapped_column(Text)
+    ingestion_run_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ingestion_runs.id")
+    )
+    data_version: Mapped[str] = mapped_column(Text)
+
+
+class DelistingEvent(Base):
+    """Explicit delisting outcome — the price history does NOT silently end.
+    `delisting_return`/`terminal_price` stay NULL in Phase 1 (no price source
+    yet); they are never fabricated. One delisting per security → PK is
+    security_id."""
+
+    __tablename__ = "delisting_event"
+    __table_args__ = (
+        CheckConstraint(
+            "successor_security_id IS NULL OR successor_security_id <> security_id",
+            name="delist_successor_not_self",
+        ),
+    )
+
+    security_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("security_master.security_id"), primary_key=True
+    )
+    delisting_date: Mapped[date] = mapped_column(Date)
+    delisting_code: Mapped[str | None] = mapped_column(Text)
+    delisting_reason: Mapped[str | None] = mapped_column(Text)
+    delisting_return: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))  # Phase 2
+    cash_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    successor_security_id: Mapped[int | None] = mapped_column(BigInteger)
+    terminal_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))  # Phase 2
+    source: Mapped[str] = mapped_column(Text)
+    ingestion_run_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ingestion_runs.id")
+    )
+    data_version: Mapped[str] = mapped_column(Text)
+
+
+class UniverseDefinition(Base):
+    """Frozen, versioned eligibility rules. A historical experiment references an
+    immutable (name, version); status=frozen forbids mutation."""
+
+    __tablename__ = "universe_definition"
+    __table_args__ = (UniqueConstraint("name", "version", name="uq_universe_definition_name_ver"),)
+
+    universe_definition_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    name: Mapped[str] = mapped_column(Text)
+    version: Mapped[int] = mapped_column(Integer)
+    description: Mapped[str | None] = mapped_column(Text)
+    eligibility_rules_json: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    source_requirements_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    effective_from: Mapped[date | None] = mapped_column(Date)
+    effective_to: Mapped[date | None] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    frozen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[UniverseStatus] = mapped_column(
+        _text_enum(UniverseStatus, "universe_status_e"),
+        default=UniverseStatus.DRAFT,
+        server_default="draft",
+    )
+
+
+class UniverseMembership(Base):
+    """Whether a security was eligible on a historical date. Reconstructable
+    point-in-time; membership never extends past the security's delisting date
+    (enforced by the builder + a data-quality check). Market-cap/price/volume
+    stay NULL until Phase 2 supplies the filters."""
+
+    __tablename__ = "universe_membership"
+
+    universe_definition_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("universe_definition.universe_definition_id"), primary_key=True
+    )
+    security_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("security_master.security_id"), primary_key=True
+    )
+    membership_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    included_flag: Mapped[bool] = mapped_column(Boolean)
+    exclusion_reason: Mapped[str | None] = mapped_column(Text)
+    market_cap: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))  # Phase 2
+    price: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))  # Phase 2
+    dollar_volume: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))  # Phase 2
+    exchange: Mapped[str | None] = mapped_column(Text)
+    security_type: Mapped[SecurityType | None] = mapped_column(
+        _text_enum(SecurityType, "security_type_e")
+    )
+    classification_id: Mapped[int | None] = mapped_column(BigInteger)
+    source: Mapped[str] = mapped_column(Text)
+    ingestion_run_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ingestion_runs.id")
+    )
+    data_version: Mapped[str] = mapped_column(Text)
+
+
+class HistoricalClassification(Base):
+    """Point-in-time sector/industry. Never backfilled from today's sector.
+    Absent PIT classifications are recorded as absent, not fabricated."""
+
+    __tablename__ = "historical_classification"
+    __table_args__ = (
+        UniqueConstraint(
+            "security_id", "classification_scheme", "valid_from", name="uq_hist_classification"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    security_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("security_master.security_id"))
+    classification_scheme: Mapped[str] = mapped_column(Text)  # e.g. 'GICS'
+    sector: Mapped[str | None] = mapped_column(Text)
+    industry_group: Mapped[str | None] = mapped_column(Text)
+    industry: Mapped[str | None] = mapped_column(Text)
+    sub_industry: Mapped[str | None] = mapped_column(Text)
+    valid_from: Mapped[date] = mapped_column(Date)
+    valid_to: Mapped[date | None] = mapped_column(Date)
+    source: Mapped[str] = mapped_column(Text)
+    ingestion_run_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ingestion_runs.id")
+    )
+    data_version: Mapped[str] = mapped_column(Text)
+
+
+# ============================================================================
+# Phase 2A — Native survivorship-clean outcome foundation & migration
+# guardrails (§ PHASE2_DESIGN, PHASE3_IDENTITY_MIGRATION). Everything here keys
+# on the permanent `security_id`, NEVER on ticker or legacy `instrument_id`.
+# Delisted/inactive securities and terminal outcomes are preserved, never
+# dropped. Nothing here touches production scoring; every row carries source +
+# ingestion_run_id + data_version + calculation/identity-world lineage so that
+# research is reproducible and legacy/native worlds can never be silently mixed.
+# ============================================================================
+
+
+class InstrumentSecurityMap(Base):
+    """First-class point-in-time bridge legacy `instrument_id` <-> native
+    `security_id`. This is the load-bearing seam between the two identity worlds:
+    every crossing is explicit, as-of-dated, lineage-stamped, and (when
+    ambiguous) quarantined. Ticker equality alone never establishes identity.
+
+    No two ACTIVE rows for the same instrument_id may overlap in time — enforced
+    by the ingestor + a data-quality check; a partial-index would also enforce it
+    but the map is small and validated on every write."""
+
+    __tablename__ = "instrument_security_map"
+    __table_args__ = (
+        Index("ix_ism_instrument", "instrument_id", "valid_from"),
+        Index("ix_ism_security", "security_id", "valid_from"),
+        CheckConstraint("valid_to IS NULL OR valid_from <= valid_to", name="ism_interval_ordered"),
+        CheckConstraint("confidence >= 0 AND confidence <= 1", name="ism_confidence_unit"),
+    )
+
+    map_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    instrument_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("instruments.id"))
+    security_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("security_master.security_id"))
+    valid_from: Mapped[date] = mapped_column(Date)
+    valid_to: Mapped[date | None] = mapped_column(Date)  # NULL = still current
+    mapping_reason: Mapped[str | None] = mapped_column(Text)
+    mapping_method: Mapped[MappingMethod] = mapped_column(
+        _text_enum(MappingMethod, "mapping_method_e")
+    )
+    status: Mapped[MappingStatus] = mapped_column(
+        _text_enum(MappingStatus, "mapping_status_e"),
+        default=MappingStatus.ACTIVE,
+        server_default="active",
+    )
+    confidence: Mapped[float] = mapped_column(Float, default=1.0, server_default="1.0")
+    source: Mapped[str] = mapped_column(Text)
+    source_record_id: Mapped[str | None] = mapped_column(Text)
+    ingestion_run_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ingestion_runs.id")
+    )
+    data_version: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SecurityPriceDaily(Base):
+    """Native daily prices under permanent `security_id`. Keyed by
+    (security_id, trade_date, source, data_version) so multiple vendor snapshots
+    coexist for cross-check/parity without collision. NEVER keyed by ticker or
+    instrument_id."""
+
+    __tablename__ = "security_price_daily"
+    __table_args__ = (
+        UniqueConstraint(
+            "security_id", "trade_date", "source", "data_version", name="uq_spd_natural"
+        ),
+        Index("ix_spd_date", "trade_date"),
+        CheckConstraint("close IS NULL OR close >= 0", name="spd_close_nonneg"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    security_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("security_master.security_id"))
+    trade_date: Mapped[date] = mapped_column(Date)
+    open: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    high: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    low: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    close: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    adjusted_close: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    volume: Mapped[int | None] = mapped_column(BigInteger)
+    total_return_factor: Mapped[Decimal | None] = mapped_column(Numeric(18, 10))
+    split_factor: Mapped[Decimal | None] = mapped_column(Numeric(18, 10))
+    dividend_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    currency: Mapped[str] = mapped_column(Text, default="USD", server_default="USD")
+    exchange: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(Text)
+    source_record_id: Mapped[str | None] = mapped_column(Text)
+    ingestion_run_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ingestion_runs.id")
+    )
+    data_version: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SecurityMarketSnapshot(Base):
+    """Point-in-time eligibility & exposure inputs (price, shares, market cap,
+    liquidity) that activate the Phase-1 PENDING universe filters. Values are
+    as-of; never today's shares projected back, never fabricated."""
+
+    __tablename__ = "security_market_snapshot"
+    __table_args__ = (
+        UniqueConstraint(
+            "security_id", "snapshot_date", "source", "data_version", name="uq_sms_natural"
+        ),
+        Index("ix_sms_date", "snapshot_date"),
+        CheckConstraint("market_cap IS NULL OR market_cap >= 0", name="sms_mktcap_nonneg"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    security_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("security_master.security_id"))
+    snapshot_date: Mapped[date] = mapped_column(Date)
+    price: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    shares_outstanding: Mapped[int | None] = mapped_column(BigInteger)
+    market_cap: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))
+    volume: Mapped[int | None] = mapped_column(BigInteger)
+    average_dollar_volume: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))
+    exchange: Mapped[str | None] = mapped_column(Text)
+    security_type: Mapped[SecurityType | None] = mapped_column(
+        _text_enum(SecurityType, "security_type_e")
+    )
+    sector: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(Text)
+    ingestion_run_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ingestion_runs.id")
+    )
+    data_version: Mapped[str] = mapped_column(Text)
+
+
+class BenchmarkReturnDaily(Base):
+    """Daily total return for a benchmark (market or a sector). `benchmark_key`
+    is 'MARKET' or 'SECTOR:<gics sector>'. Feeds benchmark- and sector-relative
+    forward returns. Identity-neutral (not per security)."""
+
+    __tablename__ = "benchmark_return_daily"
+    __table_args__ = (
+        UniqueConstraint(
+            "benchmark_key", "trade_date", "source", "data_version", name="uq_brd_natural"
+        ),
+        Index("ix_brd_date", "trade_date"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    benchmark_key: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(Text)  # 'market' | 'sector'
+    trade_date: Mapped[date] = mapped_column(Date)
+    total_return: Mapped[Decimal | None] = mapped_column(Numeric(18, 10))
+    source: Mapped[str] = mapped_column(Text)
+    ingestion_run_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ingestion_runs.id")
+    )
+    data_version: Mapped[str] = mapped_column(Text)
+
+
+class SecurityReturnDaily(Base):
+    """Canonical daily total-return outcome under `security_id`. `return_status`
+    distinguishes normal / corporate-action / delisting / terminal / missing /
+    unresolved so a delisting is never silently a gap and never assumed zero."""
+
+    __tablename__ = "security_return_daily"
+    __table_args__ = (
+        UniqueConstraint(
+            "security_id",
+            "trade_date",
+            "source",
+            "data_version",
+            "calculation_version",
+            name="uq_srd_natural",
+        ),
+        Index("ix_srd_date", "trade_date"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    security_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("security_master.security_id"))
+    trade_date: Mapped[date] = mapped_column(Date)
+    price_return: Mapped[Decimal | None] = mapped_column(Numeric(18, 10))
+    dividend_return: Mapped[Decimal | None] = mapped_column(Numeric(18, 10))
+    delisting_return: Mapped[Decimal | None] = mapped_column(Numeric(18, 10))
+    total_return: Mapped[Decimal | None] = mapped_column(Numeric(18, 10))
+    return_status: Mapped[ReturnStatus] = mapped_column(_text_enum(ReturnStatus, "return_status_e"))
+    source: Mapped[str] = mapped_column(Text)
+    ingestion_run_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ingestion_runs.id")
+    )
+    data_version: Mapped[str] = mapped_column(Text)
+    calculation_version: Mapped[str] = mapped_column(Text)
+
+
+class TerminalOutcome(Base):
+    """Explicit terminal (delisting/M&A/bankruptcy) valuation for a security.
+    Complements Phase-1 `delisting_event`; records the deterministic RULE used,
+    the resulting investor value, its source and confidence — never fabricated,
+    never zero-assumed. UNKNOWN rule ⇒ unresolved (the observation survives)."""
+
+    __tablename__ = "terminal_outcome"
+    __table_args__ = (
+        CheckConstraint(
+            "confidence IS NULL OR (confidence >= 0 AND confidence <= 1)",
+            name="terminal_confidence_unit",
+        ),
+    )
+
+    security_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("security_master.security_id"), primary_key=True
+    )
+    event_date: Mapped[date] = mapped_column(Date)
+    rule: Mapped[TerminalRule] = mapped_column(_text_enum(TerminalRule, "terminal_rule_e"))
+    terminal_return: Mapped[Decimal | None] = mapped_column(Numeric(18, 10))
+    terminal_value: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    cash_consideration: Mapped[Decimal | None] = mapped_column(Numeric(18, 6))
+    successor_security_id: Mapped[int | None] = mapped_column(BigInteger)
+    resolved: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    confidence: Mapped[float | None] = mapped_column(Float)
+    source: Mapped[str] = mapped_column(Text)
+    dq_status: Mapped[IssueStatus] = mapped_column(
+        _text_enum(IssueStatus, "issue_status_e"),
+        default=IssueStatus.OPEN,
+        server_default="open",
+    )
+    ingestion_run_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ingestion_runs.id")
+    )
+    data_version: Mapped[str] = mapped_column(Text)
+    calculation_version: Mapped[str] = mapped_column(Text)
+
+
+class ForwardReturn(Base):
+    """Reproducible forward outcome per (security_id, as_of_date, horizon). The
+    generator NEVER discards an observation for lack of a normal exit price:
+    delisting/terminal outcomes fill the exit, and an unknown terminal outcome is
+    recorded as `unresolved`. Carries the full integrity stamp set."""
+
+    __tablename__ = "forward_return"
+    __table_args__ = (
+        UniqueConstraint(
+            "security_id",
+            "as_of_date",
+            "horizon",
+            "snapshot_checksum",
+            name="uq_fwd_natural",
+        ),
+        Index("ix_fwd_asof", "as_of_date", "horizon"),
+        CheckConstraint(
+            "exit_date IS NULL OR entry_date IS NULL OR exit_date >= entry_date",
+            name="fwd_exit_after_entry",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    security_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("security_master.security_id"))
+    as_of_date: Mapped[date] = mapped_column(Date)
+    horizon: Mapped[str] = mapped_column(Text)
+    entry_date: Mapped[date | None] = mapped_column(Date)
+    exit_date: Mapped[date | None] = mapped_column(Date)
+    absolute_return: Mapped[Decimal | None] = mapped_column(Numeric(18, 10))
+    benchmark_relative_return: Mapped[Decimal | None] = mapped_column(Numeric(18, 10))
+    sector_relative_return: Mapped[Decimal | None] = mapped_column(Numeric(18, 10))
+    residual_return: Mapped[Decimal | None] = mapped_column(Numeric(18, 10))  # deferred (Phase 2B+)
+    terminal_event_flag: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    delisting_in_window_flag: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    outcome_status: Mapped[OutcomeStatus] = mapped_column(
+        _text_enum(OutcomeStatus, "outcome_status_e")
+    )
+    # -- research integrity stamps (Stage 7) --
+    identity_world: Mapped[IdentityWorld] = mapped_column(
+        _text_enum(IdentityWorld, "identity_world_e"),
+        default=IdentityWorld.NATIVE_SECURITY,
+        server_default="native_security",
+    )
+    calculation_version: Mapped[str] = mapped_column(Text)
+    universe_version: Mapped[str | None] = mapped_column(Text)
+    snapshot_checksum: Mapped[str] = mapped_column(Text)
+    source_data_version: Mapped[str] = mapped_column(Text)
+    ingestion_run_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("ingestion_runs.id")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ResearchDatasetSnapshot(Base):
+    """Immutable, reproducible research-ready dataset. A FROZEN snapshot may never
+    be mutated; rebuilding from the same inputs yields the same `snapshot_checksum`.
+    `identity_world`/`feature_world`/`outcome_world` are persisted explicitly so a
+    consumer never infers the world from a table name (Stage 7)."""
+
+    __tablename__ = "research_dataset_snapshot"
+    __table_args__ = (
+        UniqueConstraint("snapshot_name", "snapshot_version", name="uq_rds_name_ver"),
+    )
+
+    snapshot_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    snapshot_name: Mapped[str] = mapped_column(Text)
+    snapshot_version: Mapped[int] = mapped_column(Integer)
+    universe_definition_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("universe_definition.universe_definition_id")
+    )
+    universe_version: Mapped[str | None] = mapped_column(Text)
+    identity_world: Mapped[IdentityWorld] = mapped_column(
+        _text_enum(IdentityWorld, "identity_world_e")
+    )
+    feature_world: Mapped[IdentityWorld | None] = mapped_column(
+        _text_enum(IdentityWorld, "feature_world_e")
+    )
+    outcome_world: Mapped[IdentityWorld] = mapped_column(
+        _text_enum(IdentityWorld, "outcome_world_e")
+    )
+    data_version: Mapped[str] = mapped_column(Text)
+    code_sha: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    frozen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    row_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    security_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    date_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    manifest_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    snapshot_checksum: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[SnapshotStatus] = mapped_column(
+        _text_enum(SnapshotStatus, "snapshot_status_e"),
+        default=SnapshotStatus.DRAFT,
+        server_default="draft",
+    )
+
+
+class ExperimentRun(Base):
+    """Execution-level provenance for one experiment run. The definition-level
+    registry (`research/experiments/registry.py`) says WHAT an experiment is;
+    this says that it RAN, against which exact inputs, with what integrity stamps
+    — so every research result traces to one immutable execution record."""
+
+    __tablename__ = "experiment_run"
+    __table_args__ = (
+        UniqueConstraint("experiment_id", "run_number", name="uq_exprun_experiment_number"),
+        Index("ix_exprun_experiment", "experiment_id", "started_at"),
+    )
+
+    experiment_run_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    experiment_id: Mapped[str] = mapped_column(Text)
+    run_number: Mapped[int] = mapped_column(Integer)
+    status: Mapped[ExperimentRunStatus] = mapped_column(
+        _text_enum(ExperimentRunStatus, "experiment_run_status_e"),
+        default=ExperimentRunStatus.RUNNING,
+        server_default="running",
+    )
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    identity_world: Mapped[IdentityWorld] = mapped_column(
+        _text_enum(IdentityWorld, "identity_world_e")
+    )
+    signal_version: Mapped[str | None] = mapped_column(Text)
+    feature_version: Mapped[str | None] = mapped_column(Text)
+    outcome_version: Mapped[str | None] = mapped_column(Text)
+    universe_version: Mapped[str | None] = mapped_column(Text)
+    snapshot_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("research_dataset_snapshot.snapshot_id")
+    )
+    snapshot_checksum: Mapped[str | None] = mapped_column(Text)
+    data_version: Mapped[str | None] = mapped_column(Text)
+    code_sha: Mapped[str | None] = mapped_column(Text)
+    configuration_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    pre_registration_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    kill_criteria_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    error_detail: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ExperimentRunMetric(Base):
+    __tablename__ = "experiment_run_metric"
+    __table_args__ = (Index("ix_exprunmetric_run", "experiment_run_id", "metric_name"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    experiment_run_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("experiment_run.experiment_run_id")
+    )
+    metric_name: Mapped[str] = mapped_column(Text)
+    horizon: Mapped[str | None] = mapped_column(Text)
+    segment: Mapped[str | None] = mapped_column(Text)
+    value: Mapped[float | None] = mapped_column(Float)
+    confidence_lower: Mapped[float | None] = mapped_column(Float)
+    confidence_upper: Mapped[float | None] = mapped_column(Float)
+    sample_size: Mapped[int | None] = mapped_column(Integer)
+    effective_sample_size: Mapped[float | None] = mapped_column(Float)
+    calculation_version: Mapped[str | None] = mapped_column(Text)
+
+
+class ExperimentRunDecision(Base):
+    __tablename__ = "experiment_run_decision"
+
+    experiment_run_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("experiment_run.experiment_run_id"), primary_key=True
+    )
+    decision: Mapped[ExperimentDecision] = mapped_column(
+        _text_enum(ExperimentDecision, "experiment_decision_e")
+    )
+    decision_reason: Mapped[str | None] = mapped_column(Text)
+    promotion_gate_results_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewer: Mapped[str | None] = mapped_column(Text)
+    knowledge_update_reference: Mapped[str | None] = mapped_column(Text)
+
+
+class FeatureParityRecord(Base):
+    """Parity track 1 — computation equivalence. One recorded comparison of a
+    feature computed by the legacy vs native code path on IDENTICAL inputs; an
+    unexplained mismatch beyond tolerance fails (`passed=False`)."""
+
+    __tablename__ = "feature_parity_record"
+    __table_args__ = (Index("ix_fpr_feature", "feature_name", "passed"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    feature_name: Mapped[str] = mapped_column(Text)
+    feature_version: Mapped[str | None] = mapped_column(Text)
+    fixture_key: Mapped[str] = mapped_column(Text)  # identifies the shared input fixture
+    legacy_value: Mapped[float | None] = mapped_column(Float)
+    native_value: Mapped[float | None] = mapped_column(Float)
+    absolute_difference: Mapped[float | None] = mapped_column(Float)
+    tolerance: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
+    passed: Mapped[bool] = mapped_column(Boolean)
+    detail: Mapped[str | None] = mapped_column(Text)
+    calculation_version: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DataDivergenceRecord(Base):
+    """Parity track 2 — data divergence characterization. A legacy-vs-native
+    value difference attributed to a cause. `review_status=unexplained` (or an
+    UNKNOWN class) is material-divergence-until-explained and BLOCKS promotion."""
+
+    __tablename__ = "data_divergence_record"
+    __table_args__ = (Index("ix_ddr_review", "divergence_class", "review_status"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    security_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("security_master.security_id")
+    )
+    observation_date: Mapped[date | None] = mapped_column(Date)
+    feature_name: Mapped[str | None] = mapped_column(Text)
+    legacy_value: Mapped[float | None] = mapped_column(Float)
+    native_value: Mapped[float | None] = mapped_column(Float)
+    absolute_difference: Mapped[float | None] = mapped_column(Float)
+    relative_difference: Mapped[float | None] = mapped_column(Float)
+    divergence_class: Mapped[DivergenceClass] = mapped_column(
+        _text_enum(DivergenceClass, "divergence_class_e")
+    )
+    explanation: Mapped[str | None] = mapped_column(Text)
+    source_lineage: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    review_status: Mapped[ParityReviewStatus] = mapped_column(
+        _text_enum(ParityReviewStatus, "parity_review_status_e"),
+        default=ParityReviewStatus.UNREVIEWED,
+        server_default="unreviewed",
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

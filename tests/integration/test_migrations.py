@@ -44,6 +44,30 @@ REFERENCE_TABLES = {
     # "trim-score output tables"): immutable archive + derived outcomes
     "predictions",
     "prediction_outcomes",
+    # Evaluation Foundation Phase 1 — point-in-time security master & universe
+    # integrity (docs/SECURITY_MASTER.md): survivorship-clean historical identity
+    "security_master",
+    "security_identifier_history",
+    "security_lifecycle_event",
+    "delisting_event",
+    "universe_definition",
+    "universe_membership",
+    "historical_classification",
+    # Phase 2A — native survivorship-clean outcome foundation & migration
+    # guardrails (docs/PHASE2A_NATIVE_OUTCOMES.md)
+    "instrument_security_map",
+    "security_price_daily",
+    "security_market_snapshot",
+    "benchmark_return_daily",
+    "security_return_daily",
+    "terminal_outcome",
+    "forward_return",
+    "research_dataset_snapshot",
+    "experiment_run",
+    "experiment_run_metric",
+    "experiment_run_decision",
+    "feature_parity_record",
+    "data_divergence_record",
 }
 
 
