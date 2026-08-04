@@ -1,3 +1,8 @@
 # Generated personal decision reports — never commit.
 data/reports/
 data/validation/
+
+# Build artifacts and regenerable ingestion cache (V6 closure)
+__pycache__/
+*.pyc
+RawData/
