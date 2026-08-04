@@ -11,6 +11,7 @@ import pytest
 
 from mip.core.exceptions import ConfigurationError
 from mip.engine.evidence import (
+    EQUAL_SE,
     BASELINE_CORRELATION,
     OVERLAP_CORRELATION,
     DecisionEvidence,
@@ -134,12 +135,16 @@ def test_correlation_priors() -> None:
 def test_combination_matches_the_shared_framework_by_hand() -> None:
     """Two agreeing unrelated models: the engine must reproduce the shared
     correlated fixed-effect combination exactly (never score averaging)."""
-    a = make_evidence("valuation", effect=0.02, z_raw=2.0)  # se = 0.01
-    b = make_evidence("earnings_behavior", effect=0.04, z_raw=2.0)  # se = 0.02
+    a = make_evidence("valuation", effect=0.02, z_raw=2.0)
+    b = make_evidence("earnings_behavior", effect=0.04, z_raw=2.0)
     result = combine({"valuation": a, "earnings_behavior": b})
 
+    # A-2026-006: per-model se is EQUAL (model_standard_error), never
+    # recovered from effect/z_raw. Both models therefore carry EQUAL_SE.
     rho = BASELINE_CORRELATION
-    expected = combine_evidence([0.04, 0.02], [0.02, 0.01], [[1, rho], [rho, 1]])
+    expected = combine_evidence(
+        [0.04, 0.02], [EQUAL_SE, EQUAL_SE], [[1, rho], [rho, 1]]
+    )
     assert result.expected_excess_return == pytest.approx(expected.effect)
     assert result.combined_score == pytest.approx(score_from_z(expected.z))
     assert result.diagnostics.z_raw == pytest.approx(expected.z_raw)
@@ -240,12 +245,21 @@ def test_breakdown_is_fully_traceable() -> None:
     assert "description" in result.strongest_supporting_reason
 
 
-def test_expectations_are_precision_weighted() -> None:
-    a = make_evidence("valuation", effect=0.02, z_raw=2.0)  # se .01, weight 10000
-    b = make_evidence("earnings_behavior", effect=0.04, z_raw=1.0)  # se .04, weight 625
+def test_expectations_are_equally_weighted() -> None:
+    """A-2026-006: equal per-model uncertainty => equal normalized weights.
+
+    Previously this test pinned the recovered-SE defect: se was taken as
+    |effect / z_raw|, so `valuation` (se .01) received weight 10000 against
+    `earnings_behavior` (se .04) at 625 — a 16:1 split driven by the reported
+    effect magnitudes. That inversion is removed; weights are now exactly 1/n.
+    This asserts correctness only and implies nothing about accuracy.
+    """
+    a = make_evidence("valuation", effect=0.02, z_raw=2.0)
+    b = make_evidence("earnings_behavior", effect=0.04, z_raw=1.0)
     result = combine({"valuation": a, "earnings_behavior": b})
-    w_a, w_b = 10000 / 10625, 625 / 10625
+    w_a = w_b = 0.5
     assert result.expected_return == pytest.approx(w_a * 0.03 + w_b * 0.05)
+    assert [c.weight_share for c in result.evidence_breakdown] == pytest.approx([0.5, 0.5])
     assert result.expected_downside == pytest.approx(result.expected_return - 0.12)
     assert result.expected_upside == pytest.approx(result.expected_return + 0.12)
     assert result.effective_sample_size == 25.0  # max, never summed

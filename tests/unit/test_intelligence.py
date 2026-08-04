@@ -148,7 +148,11 @@ def test_diff_against_previous() -> None:
         "1m": {
             "as_of": "2026-07-09",
             "trim_score": assessment.trim_score + 12.0,
-            "recommendation_label": "Mixed Evidence",
+            # A-2026-006: must differ from whatever label the engine now emits.
+            # Previously hard-coded "Mixed Evidence"; the equal-uncertainty
+            # patch shifted combined scores enough that the engine itself can
+            # emit that label, leaving no diff for this test to detect.
+            "recommendation_label": f"{assessment.recommendation_label} (prior)",
             "primary_trim_drivers": ["macro_regime"],
             "participating_models": ["momentum_exhaustion", "valuation"],
         }

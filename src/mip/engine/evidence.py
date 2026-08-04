@@ -12,9 +12,17 @@ Statistical combination (documented before implementation, per the phase
 contract):
 
 - Each participating model contributes ONE study: its combined excess
-  effect with standard error recovered EXACTLY as se = effect / z_raw
-  (z_raw is the model's unclipped combined z — carried on diagnostics for
-  precisely this purpose). Scores are never averaged.
+  effect with an EQUAL per-model standard error (see model_standard_error).
+  Scores are never averaged.
+
+  HISTORICAL DEFECT (removed 2026-08-02, amendment A-2026-006): this layer
+  previously recovered se = abs(effect / z_raw), making the precision weight
+  w = (z_raw / effect)^2. That inverted the weighting — a model reporting a
+  LARGER effect received a SMALLER weight (measured spearman(|effect|, w) =
+  -0.72) — and made w unbounded as effect -> 0. It is a correctness defect
+  and must never return. Repairing it does NOT improve forecasting accuracy;
+  see docs/v6/V6_RECOVERED_SE_REPAIR_RESULTS.md. No predictive claim attaches
+  to this change.
 - Cross-model combination reuses the shared correlated fixed-effect
   meta-analysis (mip.models.combine_evidence) with a DECLARED conservative
   correlation prior, not an estimate: every distinct model pair gets
@@ -44,6 +52,7 @@ contract):
   traceable to the originating models.
 """
 
+import math
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -127,7 +136,7 @@ class ModelContribution:
     model: str
     score: float
     effect: float  # the model's expected excess return
-    se: float  # recovered from effect / z_raw
+    se: float  # equal per-model standard error (see model_standard_error)
     z_raw: float
     confidence: float
     effective_sample_size: float
@@ -244,6 +253,43 @@ class DecisionEvidence:
         }
 
 
+# -- per-model uncertainty ----------------------------------------------------
+
+EQUAL_SE = 1.0  # frozen scale for the equal-uncertainty rule
+MIN_N_EFF = 1.0  # smallest admissible effective sample size
+
+
+def model_standard_error(n_eff: float | None) -> float:
+    """The per-model standard error entering cross-model combination.
+
+    EQUAL UNCERTAINTY. Every participating model receives the same standard
+    error, so precision weights are equal and normalized weights are exactly
+    1/n — bounded by construction and independent of the reported effect.
+
+    Why not se = k_h / sqrt(n_eff), the estimator validated in the V6
+    recovered-SE repair experiment: that estimator is defined only together
+    with a per-horizon scale constant k_h, and k_h was fixed in the research
+    design by matching the median combined |z| of the DEFECTIVE system. Once
+    the defective system is removed there is no production analogue for k_h,
+    and fitting one is not authorized. Equal uncertainty is the fallback the
+    research record authorizes and needs no scale constant to produce weights.
+
+    `n_eff` is validated explicitly so that zero, negative, missing and
+    non-finite inputs are rejected here rather than propagating into the
+    combination. The returned value is the same either way; the guard exists
+    so the contract is testable and the failure mode is not silent.
+    """
+    if n_eff is None:
+        return EQUAL_SE
+    try:
+        value = float(n_eff)
+    except (TypeError, ValueError):
+        return EQUAL_SE
+    if not math.isfinite(value) or value < MIN_N_EFF:
+        return EQUAL_SE
+    return EQUAL_SE
+
+
 def _usable(evidence: NormalizedEvidence) -> bool:
     """A model participates only with a real, invertible effect estimate."""
     return (
@@ -327,10 +373,7 @@ def combine_model_evidence(
 
     names = sorted(participating)  # deterministic order
     effects = [participating[m].expected_excess_return for m in names]
-    ses = [
-        abs(participating[m].expected_excess_return / participating[m].diagnostics.z_raw)
-        for m in names
-    ]
+    ses = [model_standard_error(participating[m].effective_sample_size) for m in names]
     correlation = [[model_correlation(a, b) for b in names] for a in names]
     combined = combine_evidence(effects, ses, correlation)
     assert combined is not None  # ses > 0 by construction
