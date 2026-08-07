@@ -11,8 +11,8 @@ import pytest
 
 from mip.core.exceptions import ConfigurationError
 from mip.engine.evidence import (
-    EQUAL_SE,
     BASELINE_CORRELATION,
+    EQUAL_SE,
     OVERLAP_CORRELATION,
     DecisionEvidence,
     combine_model_evidence,
@@ -142,9 +142,7 @@ def test_combination_matches_the_shared_framework_by_hand() -> None:
     # A-2026-006: per-model se is EQUAL (model_standard_error), never
     # recovered from effect/z_raw. Both models therefore carry EQUAL_SE.
     rho = BASELINE_CORRELATION
-    expected = combine_evidence(
-        [0.04, 0.02], [EQUAL_SE, EQUAL_SE], [[1, rho], [rho, 1]]
-    )
+    expected = combine_evidence([0.04, 0.02], [EQUAL_SE, EQUAL_SE], [[1, rho], [rho, 1]])
     assert result.expected_excess_return == pytest.approx(expected.effect)
     assert result.combined_score == pytest.approx(score_from_z(expected.z))
     assert result.diagnostics.z_raw == pytest.approx(expected.z_raw)

@@ -39,6 +39,10 @@ packages = ["src/mip"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+# Hashed V6 research harnesses and FROZEN Phase 1 study tooling are historical
+# artifacts recorded in MANIFEST.sha256. They are exempt from evolving lint rules;
+# reformatting them would invalidate the reproducibility record.
+extend-exclude = ["tools/v6", "tools/phase1", "tests/test_evidence_recovered_se.py"]
 src = ["src", "tests"]
 
 [tool.ruff.lint]
@@ -73,6 +77,8 @@ select = ["E", "W", "F", "I", "B", "UP", "N"]
 [tool.black]
 line-length = 100
 target-version = ["py313"]
+# See [tool.ruff] extend-exclude: hashed/frozen historical artifacts.
+extend-exclude = "tools/(v6|phase1)|tests/test_evidence_recovered_se\\.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
