@@ -21,6 +21,7 @@ from mip.cli.ingest import app as ingest_app
 from mip.cli.intelligence import app as intelligence_app
 from mip.cli.macro import app as macro_app
 from mip.cli.portfolio import app as portfolio_app
+from mip.cli.product import app as product_app
 from mip.cli.quality import app as quality_app
 from mip.cli.report import app as report_app
 from mip.cli.research import app as research_app
@@ -58,6 +59,7 @@ app.command("attribution")(attribution)
 app.add_typer(evaluate_app, name="evaluate")
 app.command("update")(update_command)
 app.add_typer(report_app, name="report")
+app.add_typer(product_app, name="product")
 
 
 def _version_callback(value: bool) -> None:
