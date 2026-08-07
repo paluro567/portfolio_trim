@@ -16,6 +16,10 @@ DISCLOSURE = (
 )
 
 
+def fmt_pct(v) -> str:
+    return "unavailable" if v is None else f"{v:.2%}"
+
+
 def _money(v) -> str:
     return "unavailable" if v is None else f"${v:,.2f}"
 
@@ -85,6 +89,11 @@ def render(
         "calculation |"
     )
     add(
+        f"| **Market-value weight** | "
+        f"{fmt_pct(pos.market_weight)} of "
+        f"{_money(pos.portfolio_market_value)} portfolio | **calculation** |"
+    )
+    add(
         f"| Cost-basis weight | "
         f"{f'{pos.cost_weight:.2%}' if pos.cost_weight is not None else 'unavailable'} "
         f"of {pos.portfolio_positions} positions | calculation |"
@@ -100,6 +109,28 @@ def render(
     add("\n**Unavailable portfolio inputs:**\n")
     for u in pos.unavailable:
         add(f"- {u}")
+
+    pol = meta.get("policy") or {}
+    add("\n**Portfolio policy**\n")
+    if pol.get("status") == "SUPPLIED":
+        add(
+            f"- Supplied by the portfolio owner. Version `{pol['policy_version']}`, "
+            f"effective {pol['effective_date']}, source `{pol['source']}`."
+        )
+        add(
+            f"- Hard cap **{pol['hard_cap_pct']}%** of portfolio market value; "
+            f"core target **{pol['core_target_pct']}%**."
+        )
+    else:
+        missing = ", ".join(pol.get("missing", []))
+        template = pol.get("path", "config/policy/personal.yaml")
+        add(f"- **NOT SUPPLIED.** {pol.get('reason', 'no policy loaded')}")
+        add(f"- Required and unset: {missing}")
+        add(f"- Template awaiting the owner's values: `{template}`")
+        add(
+            "- The system does not invent position limits. Until these are supplied, "
+            "policy-dependent constraints stay NOT_EVALUABLE and the action stays ABSTAIN."
+        )
 
     # 8-15 evidence by domain
     order = [

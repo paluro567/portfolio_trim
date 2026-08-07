@@ -46,6 +46,8 @@ def _pos(**kw) -> PositionState:
         unrealized_pnl=Decimal("100"),
         unrealized_pct=Decimal("0.10"),
         cost_weight=Decimal("0.05"),
+        market_weight=Decimal("0.06"),
+        portfolio_market_value=Decimal("20000"),
         portfolio_positions=52,
         unavailable=(),
     )
@@ -60,7 +62,8 @@ def _ev(name, domain, direction=Direction.NEUTRAL, status=Status.DESCRIPTIVE, hz
 
 
 def _cons(status=ConstraintStatus.NOT_EVALUABLE):
-    return [Constraint("c", status, "o", "t", "r")]
+    """The concentration constraint is the one `decide` inspects for blocking."""
+    return [Constraint("Concentration vs hard cap (market value)", status, "o", "t", "r")]
 
 
 # -- PositionState -----------------------------------------------------------

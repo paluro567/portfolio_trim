@@ -144,6 +144,8 @@ class PositionState:
     unrealized_pnl: Decimal | None
     unrealized_pct: Decimal | None
     cost_weight: Decimal | None
+    market_weight: Decimal | None
+    portfolio_market_value: Decimal | None
     portfolio_positions: int
     unavailable: tuple[str, ...] = field(default_factory=tuple)
 
@@ -157,6 +159,8 @@ class PositionState:
             "cost_basis": s(self.cost_basis),
             "cost_weight": s(self.cost_weight),
             "market_price": s(self.market_price),
+            "market_weight": s(self.market_weight),
+            "portfolio_market_value": s(self.portfolio_market_value),
             "market_value": s(self.market_value),
             "portfolio_positions": self.portfolio_positions,
             "price_date": self.price_date.isoformat() if self.price_date else None,

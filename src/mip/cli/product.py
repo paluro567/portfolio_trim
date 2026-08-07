@@ -14,6 +14,7 @@ from mip.cli._deps import open_session_factory
 from mip.core.db import session_scope
 from mip.product.contracts import Status
 from mip.product.decide import decide
+from mip.product.policy import DEFAULT_POLICY_PATH, PolicyArtifact, load_policy
 from mip.product.render import render
 from mip.product.slice import evaluate_constraints, gather_evidence, load_position
 
@@ -28,6 +29,7 @@ def report(
     as_of: str = typer.Option(..., "--as-of", help="ISO date, e.g. 2026-07-16"),
     balances: Path = typer.Option(DEFAULT_BALANCES, "--balances", help="Holdings CSV"),
     out_dir: Path = typer.Option(Path("data/product_reports"), "--out-dir"),
+    policy_path: Path = typer.Option(DEFAULT_POLICY_PATH, "--policy"),
 ) -> None:
     """Generate one decision-support report and archive its inputs."""
     symbol = symbol.strip().upper()
@@ -52,7 +54,8 @@ def report(
         except ValueError as exc:
             raise typer.BadParameter(str(exc)) from exc
         evidence = gather_evidence(session, symbol, as_of_d)
-        constraints = evaluate_constraints(pos)
+        policy = load_policy(policy_path)
+        constraints = evaluate_constraints(pos, policy)
         verdicts = decide(evidence, constraints, pos)
         feature_dates = [e.as_of for e in evidence if e.as_of]
         meta = {
@@ -61,6 +64,7 @@ def report(
             "generated_at": datetime.now(UTC).isoformat(),
             "balances_sha256": hashlib.sha256(balances.read_bytes()).hexdigest(),
             "balances_path": str(balances),
+            "policy": policy.to_dict(),
         }
         markdown = render(pos, evidence, constraints, verdicts, meta)
 
@@ -87,6 +91,14 @@ def report(
     typer.echo(f"report:  {report_path}")
     typer.echo(f"inputs:  {inputs_path}")
     typer.echo(f"evidence: {avail} available / {len(evidence)} total")
+    if isinstance(policy, PolicyArtifact):
+        typer.echo(
+            f"policy:   {policy.policy_version} (cap {policy.hard_cap_pct}%, "
+            f"target {policy.core_target_pct}%)"
+        )
+    else:
+        typer.echo(f"policy:   NOT SUPPLIED - required and unset: {', '.join(policy.missing)}")
+        typer.echo(f"          supply them in {policy.path} to make concentration evaluable")
     for v in verdicts:
         typer.echo(
             f"  {v.horizon:>3}  {v.action.value:<8} {v.direction.value:<11} {v.confidence.value}"

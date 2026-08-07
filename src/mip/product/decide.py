@@ -81,7 +81,10 @@ def decide(
 ) -> list[HorizonVerdict]:
     verdicts: list[HorizonVerdict] = []
     breached = [c for c in constraints if c.status is ConstraintStatus.BREACH]
-    not_evaluable = [c for c in constraints if c.status is ConstraintStatus.NOT_EVALUABLE]
+    blocking: list[str] = []
+    cap = next((c for c in constraints if c.name.startswith("Concentration vs hard cap")), None)
+    if cap is not None and cap.status is ConstraintStatus.NOT_EVALUABLE:
+        blocking.append(f"{cap.name} is NOT_EVALUABLE: {cap.reason}")
 
     for horizon, _ in HORIZONS:
         direction, contributing, conflicts = directional_view(evidence, horizon)
@@ -89,28 +92,44 @@ def decide(
 
         elim: list[tuple[str, str]] = []
         if breached:
+            c = breached[0]
             action = Action.TRIM
-            rationale = f"Deterministic constraint breached: {breached[0].name}."
-        elif not_evaluable and pos.unavailable:
+            rationale = (
+                f"Deterministic constraint BREACHED: {c.name} - observed {c.observed} "
+                f"against a limit of {c.threshold}. {c.reason} A deterministic breach "
+                f"overrides directional evidence, which is EXPERIMENTAL."
+            )
+            elim = [
+                ("ADD", "a hard limit is already breached; adding increases the breach"),
+                ("HOLD", "holding leaves a breached hard limit unaddressed"),
+                (
+                    "EXIT",
+                    "the breach is of a position-size limit; reducing to the limit "
+                    "resolves it, so full liquidation is not required",
+                ),
+                (
+                    "ABSTAIN",
+                    "the breach is deterministic and does not depend on any missing "
+                    "or experimental input",
+                ),
+            ]
+        elif blocking:
             action = Action.ABSTAIN
             rationale = (
-                "Required portfolio information is unavailable, so no portfolio action can "
-                "be justified. Every deterministic constraint is NOT_EVALUABLE: there is no "
-                "PolicyArtifact to supply position limits, total portfolio market value is "
-                "not computable, and tax lots are absent so the cost of a sale is unknown. "
-                "Directional evidence alone is EXPERIMENTAL and may not drive an action."
+                "No portfolio action can be justified. "
+                + " ".join(blocking)
+                + " Directional evidence alone is EXPERIMENTAL and may not drive an action."
             )
             elim = [
                 (
                     "ADD",
-                    "no target allocation exists (no PolicyArtifact), and the current "
-                    "weight cannot be compared to a limit; directional evidence is "
-                    "EXPERIMENTAL and may not justify increasing exposure",
+                    "no target allocation has been supplied, so there is no basis for "
+                    "increasing exposure; directional evidence is EXPERIMENTAL",
                 ),
                 (
                     "HOLD",
-                    "HOLD asserts the position is within policy. No policy exists, so "
-                    "that assertion cannot be made honestly",
+                    "HOLD asserts the position is within policy. The required policy "
+                    "values have not been supplied, so that assertion cannot be made",
                 ),
                 (
                     "TRIM",
@@ -121,12 +140,26 @@ def decide(
             ]
         else:
             action = Action.HOLD
-            rationale = "No constraint is breached and the position is within policy."
+            passing = [c for c in constraints if c.status is ConstraintStatus.PASS]
+            rationale = (
+                "Every evaluable deterministic constraint passes"
+                + (f" ({passing[0].reason})" if passing else "")
+                + ". The position is within policy, so no action is required. The "
+                "directional view is reported separately and, being EXPERIMENTAL, does "
+                "not by itself justify trading."
+            )
             elim = [
-                ("ADD", "no evidence supports increasing exposure"),
+                (
+                    "ADD",
+                    "no supplied policy value calls for increasing exposure; "
+                    "directional evidence is EXPERIMENTAL",
+                ),
                 ("TRIM", "no deterministic constraint is breached"),
                 ("EXIT", "no policy or risk condition requires full liquidation"),
-                ("ABSTAIN", "sufficient portfolio information is available to act"),
+                (
+                    "ABSTAIN",
+                    "sufficient policy and portfolio information is available to act",
+                ),
             ]
 
         verdicts.append(

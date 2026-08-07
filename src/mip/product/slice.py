@@ -66,17 +66,37 @@ def load_position(session, symbol: str, as_of: date, balances_csv: Path) -> Posi
         pnl = (mv - cost).quantize(Decimal("0.01"))
         pct = (pnl / cost).quantize(Decimal("0.0001")) if cost else None
 
-    priced = session.execute(
-        text(
-            "select count(distinct i.symbol) from daily_prices p join instruments i "
-            "on i.id=p.instrument_id where i.symbol = any(:syms)"
-        ),
-        {"syms": [x["symbol"].strip().upper() for x in rows]},
-    ).scalar_one()
-    if priced < len(rows):
+    # Market-value denominator: requires a price for EVERY holding. Cost-basis
+    # weight is NOT a substitute - it answers a different question.
+    total_mv = Decimal(0)
+    unpriced: list[str] = []
+    for row in rows:
+        sym = row["symbol"].strip().upper()
+        q = Decimal(row["quantity"])
+        hit = session.execute(
+            text(
+                "select p.close from daily_prices p join instruments i on i.id=p.instrument_id "
+                "where i.symbol=:s and p.price_date<=:d order by p.price_date desc limit 1"
+            ),
+            {"s": sym, "d": as_of},
+        ).scalar()
+        if hit is None:
+            unpriced.append(sym)
+            continue
+        total_mv += q * Decimal(str(hit))
+    if unpriced:
+        market_weight = None
+        portfolio_mv = None
         unavailable.append(
-            f"market-value portfolio weight ({priced} of {len(rows)} positions have prices "
-            "in the repository; total portfolio market value is not computable)"
+            f"market-value portfolio weight ({len(rows) - len(unpriced)} of {len(rows)} "
+            f"positions priced at or before as_of; unpriced: {', '.join(sorted(unpriced))})"
+        )
+    else:
+        portfolio_mv = total_mv.quantize(Decimal("0.01"))
+        market_weight = (
+            (mv / portfolio_mv).quantize(Decimal("0.000001"))
+            if mv is not None and portfolio_mv
+            else None
         )
     unavailable.append("tax lots and acquisition dates (broker export records average cost only)")
 
@@ -92,6 +112,8 @@ def load_position(session, symbol: str, as_of: date, balances_csv: Path) -> Posi
         unrealized_pnl=pnl,
         unrealized_pct=pct,
         cost_weight=cost_weight,
+        market_weight=market_weight,
+        portfolio_market_value=portfolio_mv,
         portfolio_positions=len(rows),
         unavailable=tuple(unavailable),
     )
@@ -351,28 +373,98 @@ def _historical(session, symbol: str, as_of: date) -> list[Evidence]:
 
 
 # ---------------------------------------------------------------- constraints
-def evaluate_constraints(pos: PositionState) -> list[Constraint]:
+def evaluate_constraints(pos: PositionState, policy=None) -> list[Constraint]:
+    """Deterministic constraints. Policy-dependent ones stay NOT_EVALUABLE
+    until the portfolio owner supplies the value."""
+    from mip.product.policy import PolicyArtifact
+
     cs: list[Constraint] = []
-    cw = f"{pos.cost_weight:.2%}" if pos.cost_weight is not None else "unavailable"
-    cs.append(
-        Constraint(
-            "Concentration (cost-basis weight)",
-            ConstraintStatus.NOT_EVALUABLE,
-            cw,
-            "unavailable",
-            "No PolicyArtifact exists. Position limits live only in the policy layer "
-            "(module M7, phase P3) which is not yet implemented, so no threshold can be "
-            "applied. The observed weight is reported as a fact.",
+    has_policy = isinstance(policy, PolicyArtifact)
+    mw = pos.market_weight
+    mw_txt = f"{mw:.2%}" if mw is not None else "unavailable"
+
+    # -- concentration vs hard cap (market value, never cost basis)
+    if mw is None:
+        cs.append(
+            Constraint(
+                "Concentration vs hard cap (market value)",
+                ConstraintStatus.NOT_EVALUABLE,
+                "unavailable",
+                "unavailable",
+                "Total portfolio market value is not computable: at least one holding has "
+                "no price at or before as_of. Cost-basis weight is not a substitute.",
+            )
         )
-    )
+    elif not has_policy:
+        miss = ", ".join(policy.missing) if policy is not None else "hard_cap_pct"
+        cs.append(
+            Constraint(
+                "Concentration vs hard cap (market value)",
+                ConstraintStatus.NOT_EVALUABLE,
+                mw_txt,
+                "unavailable",
+                f"Market-value weight is known, but no hard cap has been supplied by the "
+                f"portfolio owner. Required and unset: {miss}. The system does not invent "
+                f"position limits.",
+            )
+        )
+    else:
+        cap = policy.hard_cap_pct / Decimal(100)
+        breach = mw > cap
+        headroom = (cap - mw) * Decimal(100)
+        cs.append(
+            Constraint(
+                "Concentration vs hard cap (market value)",
+                ConstraintStatus.BREACH if breach else ConstraintStatus.PASS,
+                mw_txt,
+                f"{policy.hard_cap_pct}%",
+                (
+                    f"Position is {abs(headroom):.2f} pp "
+                    f"{'ABOVE the hard cap' if breach else 'below the hard cap'} "
+                    f"(policy {policy.policy_version}, effective {policy.effective_date})."
+                ),
+            )
+        )
+
+    # -- deviation from target
+    if mw is None or not has_policy:
+        miss = ", ".join(policy.missing) if policy is not None and not has_policy else "-"
+        cs.append(
+            Constraint(
+                "Deviation from core target (market value)",
+                ConstraintStatus.NOT_EVALUABLE,
+                mw_txt,
+                "unavailable",
+                (
+                    "Market-value weight not computable."
+                    if mw is None
+                    else "No core target supplied by the portfolio owner. Required and unset: "
+                    "{miss}."
+                ),
+            )
+        )
+    else:
+        tgt = policy.core_target_pct / Decimal(100)
+        dev = (mw - tgt) * Decimal(100)
+        cs.append(
+            Constraint(
+                "Deviation from core target (market value)",
+                ConstraintStatus.PASS,
+                mw_txt,
+                f"{policy.core_target_pct}%",
+                f"{abs(dev):.2f} pp {'above' if dev > 0 else 'below'} target. "
+                f"Deviation is reported, not enforced: no rebalance band has been supplied.",
+            )
+        )
+
     cs.append(
         Constraint(
-            "Concentration (market-value weight)",
+            "Concentration (cost basis)",
             ConstraintStatus.NOT_EVALUABLE,
-            "unavailable",
-            "unavailable",
-            "Total portfolio market value is not computable: most positions have no price "
-            "in the repository.",
+            f"{pos.cost_weight:.2%}" if pos.cost_weight is not None else "unavailable",
+            "not applicable",
+            "Cost-basis weight is reported as a fact only. It is NOT a concentration "
+            "measure: concentration risk is a function of current market value.",
         )
     )
     cs.append(

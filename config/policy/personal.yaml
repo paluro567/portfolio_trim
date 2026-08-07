@@ -1,0 +1,21 @@
+# Portfolio policy — investor preferences.
+#
+# THE SYSTEM WILL NOT INVENT THESE VALUES. Every field marked REQUIRED must be
+# stated by the portfolio owner. While any REQUIRED value is unset, all policy
+# dependent constraints report NOT_EVALUABLE and the recommended action stays
+# ABSTAIN. That is the correct behaviour, not a defect.
+#
+# Percentages are of CURRENT PORTFOLIO MARKET VALUE, not cost basis.
+
+policy_version:        # REQUIRED. Semver, e.g. "1.0.0". A change is a new version.
+effective_date:        # REQUIRED. ISO date, e.g. "2026-08-07".
+authored_by:           # optional, free text
+
+portfolio:
+  # REQUIRED. Largest share of portfolio market value any single position may
+  # occupy. Exceeding it is a hard BREACH. Example: 12.0 means 12%.
+  hard_cap_pct:
+
+  # REQUIRED. Intended share of portfolio market value for a core position.
+  # Must be <= hard_cap_pct.
+  core_target_pct:

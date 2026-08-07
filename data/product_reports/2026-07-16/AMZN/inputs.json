@@ -1,18 +1,25 @@
 {
   "constraints": [
     {
-      "name": "Concentration (cost-basis weight)",
-      "observed": "9.04%",
-      "reason": "No PolicyArtifact exists. Position limits live only in the policy layer (module M7, phase P3) which is not yet implemented, so no threshold can be applied. The observed weight is reported as a fact.",
+      "name": "Concentration vs hard cap (market value)",
+      "observed": "10.85%",
+      "reason": "Market-value weight is known, but no hard cap has been supplied by the portfolio owner. Required and unset: hard_cap_pct, core_target_pct, policy_version, effective_date. The system does not invent position limits.",
       "status": "NOT_EVALUABLE",
       "threshold": "unavailable"
     },
     {
-      "name": "Concentration (market-value weight)",
-      "observed": "unavailable",
-      "reason": "Total portfolio market value is not computable: most positions have no price in the repository.",
+      "name": "Deviation from core target (market value)",
+      "observed": "10.85%",
+      "reason": "No core target supplied by the portfolio owner. Required and unset: {miss}.",
       "status": "NOT_EVALUABLE",
       "threshold": "unavailable"
+    },
+    {
+      "name": "Concentration (cost basis)",
+      "observed": "9.04%",
+      "reason": "Cost-basis weight is reported as a fact only. It is NOT a concentration measure: concentration risk is a function of current market value.",
+      "status": "NOT_EVALUABLE",
+      "threshold": "not applicable"
     },
     {
       "name": "Liquidity (days to liquidate)",
@@ -393,9 +400,20 @@
   "meta": {
     "balances_path": "data/peter_real_opening_balances_2026-07-16.csv",
     "balances_sha256": "5f040ce30a401570b54778fed52a99379f676a33c41cb058d2393c7a215c0adc",
-    "commit": "9a6be5c",
+    "commit": "acba54b",
     "feature_date": "2026-07-16",
-    "generated_at": "2026-08-07T17:20:09.917790+00:00"
+    "generated_at": "2026-08-07T18:30:32.460150+00:00",
+    "policy": {
+      "missing": [
+        "hard_cap_pct",
+        "core_target_pct",
+        "policy_version",
+        "effective_date"
+      ],
+      "path": "config/policy/personal.yaml",
+      "reason": "policy values have not been supplied by the portfolio owner; the system does not invent them",
+      "status": "UNAVAILABLE"
+    }
   },
   "position": {
     "as_of": "2026-07-16",
@@ -404,12 +422,13 @@
     "cost_weight": "0.090400",
     "market_price": "249.89",
     "market_value": "20490.98",
+    "market_weight": "0.108473",
+    "portfolio_market_value": "188904.58",
     "portfolio_positions": 52,
     "price_date": "2026-07-16",
     "quantity": "82",
     "symbol": "AMZN",
     "unavailable": [
-      "market-value portfolio weight (7 of 52 positions have prices in the repository; total portfolio market value is not computable)",
       "tax lots and acquisition dates (broker export records average cost only)"
     ],
     "unrealized_pct": "0.3375",
@@ -422,7 +441,7 @@
       "confidence_basis": [
         "3 evidence domain(s) available: historical, market/regime, price/technical",
         "MODERATE permitted: >=2 independent domains, no major contradiction",
-        "capped at LOW: material portfolio input missing (market-value portfolio weight (7 of 52 positions have prices in the repository; total portfolio market value is not computable))",
+        "capped at LOW: material portfolio input missing (tax lots and acquisition dates (broker export records average cost only))",
         "capped at LOW: all directional readings here are EXPERIMENTAL",
         "HIGH is prohibited in the first vertical slice"
       ],
@@ -437,11 +456,11 @@
       "eliminations": [
         [
           "ADD",
-          "no target allocation exists (no PolicyArtifact), and the current weight cannot be compared to a limit; directional evidence is EXPERIMENTAL and may not justify increasing exposure"
+          "no target allocation has been supplied, so there is no basis for increasing exposure; directional evidence is EXPERIMENTAL"
         ],
         [
           "HOLD",
-          "HOLD asserts the position is within policy. No policy exists, so that assertion cannot be made honestly"
+          "HOLD asserts the position is within policy. The required policy values have not been supplied, so that assertion cannot be made"
         ],
         [
           "TRIM",
@@ -453,7 +472,7 @@
         ]
       ],
       "horizon": "1w",
-      "rationale": "Required portfolio information is unavailable, so no portfolio action can be justified. Every deterministic constraint is NOT_EVALUABLE: there is no PolicyArtifact to supply position limits, total portfolio market value is not computable, and tax lots are absent so the cost of a sale is unknown. Directional evidence alone is EXPERIMENTAL and may not drive an action."
+      "rationale": "No portfolio action can be justified. Concentration vs hard cap (market value) is NOT_EVALUABLE: Market-value weight is known, but no hard cap has been supplied by the portfolio owner. Required and unset: hard_cap_pct, core_target_pct, policy_version, effective_date. The system does not invent position limits. Directional evidence alone is EXPERIMENTAL and may not drive an action."
     },
     {
       "action": "ABSTAIN",
@@ -461,7 +480,7 @@
       "confidence_basis": [
         "3 evidence domain(s) available: historical, market/regime, price/technical",
         "MODERATE permitted: >=2 independent domains, no major contradiction",
-        "capped at LOW: material portfolio input missing (market-value portfolio weight (7 of 52 positions have prices in the repository; total portfolio market value is not computable))",
+        "capped at LOW: material portfolio input missing (tax lots and acquisition dates (broker export records average cost only))",
         "capped at LOW: all directional readings here are EXPERIMENTAL",
         "HIGH is prohibited in the first vertical slice"
       ],
@@ -473,11 +492,11 @@
       "eliminations": [
         [
           "ADD",
-          "no target allocation exists (no PolicyArtifact), and the current weight cannot be compared to a limit; directional evidence is EXPERIMENTAL and may not justify increasing exposure"
+          "no target allocation has been supplied, so there is no basis for increasing exposure; directional evidence is EXPERIMENTAL"
         ],
         [
           "HOLD",
-          "HOLD asserts the position is within policy. No policy exists, so that assertion cannot be made honestly"
+          "HOLD asserts the position is within policy. The required policy values have not been supplied, so that assertion cannot be made"
         ],
         [
           "TRIM",
@@ -489,7 +508,7 @@
         ]
       ],
       "horizon": "1m",
-      "rationale": "Required portfolio information is unavailable, so no portfolio action can be justified. Every deterministic constraint is NOT_EVALUABLE: there is no PolicyArtifact to supply position limits, total portfolio market value is not computable, and tax lots are absent so the cost of a sale is unknown. Directional evidence alone is EXPERIMENTAL and may not drive an action."
+      "rationale": "No portfolio action can be justified. Concentration vs hard cap (market value) is NOT_EVALUABLE: Market-value weight is known, but no hard cap has been supplied by the portfolio owner. Required and unset: hard_cap_pct, core_target_pct, policy_version, effective_date. The system does not invent position limits. Directional evidence alone is EXPERIMENTAL and may not drive an action."
     },
     {
       "action": "ABSTAIN",
@@ -497,7 +516,7 @@
       "confidence_basis": [
         "3 evidence domain(s) available: historical, market/regime, price/technical",
         "MODERATE permitted: >=2 independent domains, no major contradiction",
-        "capped at LOW: material portfolio input missing (market-value portfolio weight (7 of 52 positions have prices in the repository; total portfolio market value is not computable))",
+        "capped at LOW: material portfolio input missing (tax lots and acquisition dates (broker export records average cost only))",
         "capped at LOW: all directional readings here are EXPERIMENTAL",
         "HIGH is prohibited in the first vertical slice"
       ],
@@ -510,11 +529,11 @@
       "eliminations": [
         [
           "ADD",
-          "no target allocation exists (no PolicyArtifact), and the current weight cannot be compared to a limit; directional evidence is EXPERIMENTAL and may not justify increasing exposure"
+          "no target allocation has been supplied, so there is no basis for increasing exposure; directional evidence is EXPERIMENTAL"
         ],
         [
           "HOLD",
-          "HOLD asserts the position is within policy. No policy exists, so that assertion cannot be made honestly"
+          "HOLD asserts the position is within policy. The required policy values have not been supplied, so that assertion cannot be made"
         ],
         [
           "TRIM",
@@ -526,7 +545,7 @@
         ]
       ],
       "horizon": "3m",
-      "rationale": "Required portfolio information is unavailable, so no portfolio action can be justified. Every deterministic constraint is NOT_EVALUABLE: there is no PolicyArtifact to supply position limits, total portfolio market value is not computable, and tax lots are absent so the cost of a sale is unknown. Directional evidence alone is EXPERIMENTAL and may not drive an action."
+      "rationale": "No portfolio action can be justified. Concentration vs hard cap (market value) is NOT_EVALUABLE: Market-value weight is known, but no hard cap has been supplied by the portfolio owner. Required and unset: hard_cap_pct, core_target_pct, policy_version, effective_date. The system does not invent position limits. Directional evidence alone is EXPERIMENTAL and may not drive an action."
     },
     {
       "action": "ABSTAIN",
@@ -534,7 +553,7 @@
       "confidence_basis": [
         "3 evidence domain(s) available: historical, market/regime, price/technical",
         "MODERATE permitted: >=2 independent domains, no major contradiction",
-        "capped at LOW: material portfolio input missing (market-value portfolio weight (7 of 52 positions have prices in the repository; total portfolio market value is not computable))",
+        "capped at LOW: material portfolio input missing (tax lots and acquisition dates (broker export records average cost only))",
         "capped at LOW: all directional readings here are EXPERIMENTAL",
         "HIGH is prohibited in the first vertical slice"
       ],
@@ -547,11 +566,11 @@
       "eliminations": [
         [
           "ADD",
-          "no target allocation exists (no PolicyArtifact), and the current weight cannot be compared to a limit; directional evidence is EXPERIMENTAL and may not justify increasing exposure"
+          "no target allocation has been supplied, so there is no basis for increasing exposure; directional evidence is EXPERIMENTAL"
         ],
         [
           "HOLD",
-          "HOLD asserts the position is within policy. No policy exists, so that assertion cannot be made honestly"
+          "HOLD asserts the position is within policy. The required policy values have not been supplied, so that assertion cannot be made"
         ],
         [
           "TRIM",
@@ -563,7 +582,7 @@
         ]
       ],
       "horizon": "6m",
-      "rationale": "Required portfolio information is unavailable, so no portfolio action can be justified. Every deterministic constraint is NOT_EVALUABLE: there is no PolicyArtifact to supply position limits, total portfolio market value is not computable, and tax lots are absent so the cost of a sale is unknown. Directional evidence alone is EXPERIMENTAL and may not drive an action."
+      "rationale": "No portfolio action can be justified. Concentration vs hard cap (market value) is NOT_EVALUABLE: Market-value weight is known, but no hard cap has been supplied by the portfolio owner. Required and unset: hard_cap_pct, core_target_pct, policy_version, effective_date. The system does not invent position limits. Directional evidence alone is EXPERIMENTAL and may not drive an action."
     },
     {
       "action": "ABSTAIN",
@@ -571,7 +590,7 @@
       "confidence_basis": [
         "3 evidence domain(s) available: historical, market/regime, price/technical",
         "MODERATE permitted: >=2 independent domains, no major contradiction",
-        "capped at LOW: material portfolio input missing (market-value portfolio weight (7 of 52 positions have prices in the repository; total portfolio market value is not computable))",
+        "capped at LOW: material portfolio input missing (tax lots and acquisition dates (broker export records average cost only))",
         "capped at LOW: all directional readings here are EXPERIMENTAL",
         "HIGH is prohibited in the first vertical slice"
       ],
@@ -583,11 +602,11 @@
       "eliminations": [
         [
           "ADD",
-          "no target allocation exists (no PolicyArtifact), and the current weight cannot be compared to a limit; directional evidence is EXPERIMENTAL and may not justify increasing exposure"
+          "no target allocation has been supplied, so there is no basis for increasing exposure; directional evidence is EXPERIMENTAL"
         ],
         [
           "HOLD",
-          "HOLD asserts the position is within policy. No policy exists, so that assertion cannot be made honestly"
+          "HOLD asserts the position is within policy. The required policy values have not been supplied, so that assertion cannot be made"
         ],
         [
           "TRIM",
@@ -599,7 +618,7 @@
         ]
       ],
       "horizon": "1y",
-      "rationale": "Required portfolio information is unavailable, so no portfolio action can be justified. Every deterministic constraint is NOT_EVALUABLE: there is no PolicyArtifact to supply position limits, total portfolio market value is not computable, and tax lots are absent so the cost of a sale is unknown. Directional evidence alone is EXPERIMENTAL and may not drive an action."
+      "rationale": "No portfolio action can be justified. Concentration vs hard cap (market value) is NOT_EVALUABLE: Market-value weight is known, but no hard cap has been supplied by the portfolio owner. Required and unset: hard_cap_pct, core_target_pct, policy_version, effective_date. The system does not invent position limits. Directional evidence alone is EXPERIMENTAL and may not drive an action."
     }
   ]
 }
