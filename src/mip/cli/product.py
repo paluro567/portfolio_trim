@@ -57,7 +57,9 @@ def report(
         policy = load_policy(policy_path)
         constraints = evaluate_constraints(pos, policy)
         verdicts = decide(evidence, constraints, pos)
-        feature_dates = [e.as_of for e in evidence if e.as_of]
+        # Catalyst events are intentionally FUTURE-dated (a scheduled earnings
+        # release). They must not be reported as the latest observed data date.
+        feature_dates = [e.as_of for e in evidence if e.as_of and e.domain != "catalysts"]
         meta = {
             "commit": commit,
             "feature_date": max(feature_dates).isoformat() if feature_dates else "unavailable",

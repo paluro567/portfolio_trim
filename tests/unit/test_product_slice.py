@@ -55,7 +55,9 @@ def _pos(**kw) -> PositionState:
     return PositionState(**base)
 
 
-def _ev(name, domain, direction=Direction.NEUTRAL, status=Status.DESCRIPTIVE, hz=ALL_H):
+def _ev(
+    name, domain="price/technical", direction=Direction.NEUTRAL, status=Status.DESCRIPTIVE, hz=ALL_H
+):
     return Evidence(
         name, domain, status, "1.0", "test", date(2026, 7, 16), hz, "e", "l", direction=direction
     )
@@ -108,19 +110,20 @@ def test_directional_view_unavailable_when_no_evidence():
 
 
 def test_directional_view_neutral_when_no_signed_evidence():
-    assert directional_view([_ev("a", "d")], "1m")[0] is Direction.NEUTRAL
+    assert directional_view([_ev("a", "price/technical")], "1m")[0] is Direction.NEUTRAL
 
 
 def test_directional_view_conflicted_surfaces_both_sides():
-    ev = [_ev("a", "d", Direction.POSITIVE), _ev("b", "d", Direction.NEGATIVE)]
+    ev = [_ev("a", "price/technical", Direction.POSITIVE), _ev("b", "sector", Direction.NEGATIVE)]
     direction, contributing, conflicts = directional_view(ev, "1m")
     assert direction is Direction.CONFLICTED
     assert conflicts and len(contributing) == 2  # conflicts remain visible
 
 
 def test_directional_view_agrees():
-    assert directional_view([_ev("a", "d", Direction.POSITIVE)], "1m")[0] is Direction.POSITIVE
-    assert directional_view([_ev("a", "d", Direction.NEGATIVE)], "1m")[0] is Direction.NEGATIVE
+    pos = directional_view([_ev("a", "price/technical", Direction.POSITIVE)], "1m")
+    assert pos[0] is Direction.POSITIVE
+    assert directional_view([_ev("b", "sector", Direction.NEGATIVE)], "1m")[0] is Direction.NEGATIVE
 
 
 # -- confidence caps ---------------------------------------------------------
@@ -134,51 +137,85 @@ def test_confidence_very_low_when_direction_unavailable():
 
 
 def test_confidence_capped_low_by_conflict():
-    ev = [_ev("a", "x", Direction.POSITIVE), _ev("b", "y", Direction.NEGATIVE)]
+    ev = [_ev("a", "price/technical", Direction.POSITIVE), _ev("b", "sector", Direction.NEGATIVE)]
     c, basis = confidence_for(ev, "1m", Direction.CONFLICTED, ["conflict"], _pos())
     assert c is Confidence.LOW
-    assert any("conflicting" in b for b in basis)
+    assert any("conflicts" in b for b in basis)
 
 
 def test_confidence_capped_low_by_missing_portfolio_input():
-    ev = [_ev("a", "x"), _ev("b", "y")]
+    ev = [_ev("a", "price/technical"), _ev("b", "sector")]
     c, basis = confidence_for(ev, "1m", Direction.NEUTRAL, [], _pos(unavailable=("weight",)))
     assert c is Confidence.LOW
-    assert any("material portfolio input missing" in b for b in basis)
+    assert any("portfolio input missing" in b for b in basis)
 
 
 def test_confidence_capped_low_because_all_readings_experimental():
-    ev = [_ev("a", "x"), _ev("b", "y")]
+    ev = [_ev("a", "price/technical"), _ev("b", "sector")]
     c, basis = confidence_for(ev, "1m", Direction.NEUTRAL, [], _pos())
     assert c is Confidence.LOW
     assert any("EXPERIMENTAL" in b for b in basis)
 
 
 # -- action rules ------------------------------------------------------------
-def test_abstain_when_required_portfolio_information_unavailable():
-    v = decide([_ev("a", "x")], _cons(), _pos(unavailable=("tax lots",)))
-    assert {x.action for x in v} == {Action.ABSTAIN}
+def test_neutral_view_yields_hold_not_abstain():
+    """Missing portfolio inputs no longer suppress the security view."""
+    v = decide([_ev("a", "price/technical")], _cons(), _pos(unavailable=("tax lots",)))
+    assert {x.action for x in v} == {Action.HOLD}
 
 
 def test_hold_when_nothing_missing_and_no_breach():
-    v = decide([_ev("a", "x")], _cons(ConstraintStatus.PASS), _pos())
+    v = decide([_ev("a", "price/technical")], _cons(ConstraintStatus.PASS), _pos())
     assert {x.action for x in v} == {Action.HOLD}
+
+
+def test_positive_view_at_low_exposure_yields_add():
+    pos = _pos(market_weight=Decimal("0.005"))
+    v = decide([_ev("a", "price/technical", Direction.POSITIVE)], _cons(), pos)
+    assert {x.action for x in v} == {Action.ADD}
+
+
+def test_positive_view_at_high_exposure_downgrades_to_hold():
+    """Sizing effect, not a bearish view."""
+    pos = _pos(market_weight=Decimal("0.25"))
+    v = decide([_ev("a", "price/technical", Direction.POSITIVE)], _cons(), pos)
+    assert {x.action for x in v} == {Action.HOLD}
+    assert all(x.direction is Direction.POSITIVE for x in v)
+    assert any("position-sizing effect" in x.rationale for x in v)
+
+
+def test_negative_view_at_low_exposure_still_trims():
+    """Security evidence can act even when the position is small."""
+    pos = _pos(market_weight=Decimal("0.005"))
+    v = decide([_ev("a", "price/technical", Direction.NEGATIVE)], _cons(), pos)
+    assert {x.action for x in v} == {Action.TRIM}
+
+
+def test_portfolio_weight_never_changes_the_directional_view():
+    ev = [_ev("a", "price/technical", Direction.POSITIVE)]
+    seen = set()
+    for w in ("0.005", "0.02", "0.11", "0.25"):
+        v = decide(ev, _cons(), _pos(market_weight=Decimal(w)))
+        seen |= {x.direction for x in v}
+    assert seen == {Direction.POSITIVE}
 
 
 def test_deterministic_constraint_overrides_experimental_direction():
     """A BREACH forces TRIM even when directional evidence is POSITIVE."""
-    ev = [_ev("a", "x", Direction.POSITIVE)]
+    ev = [_ev("a", "price/technical", Direction.POSITIVE)]
     v = decide(ev, _cons(ConstraintStatus.BREACH), _pos(unavailable=("tax lots",)))
     assert {x.action for x in v} == {Action.TRIM}
+    assert all(x.direction is Direction.POSITIVE for x in v)
+    assert any("risk-limit decision" in x.rationale for x in v)
 
 
 def test_all_five_horizons_present():
-    v = decide([_ev("a", "x")], _cons(), _pos())
+    v = decide([_ev("a", "price/technical")], _cons(), _pos())
     assert [x.horizon for x in v] == list(ALL_H)
 
 
 def test_elimination_trace_covers_every_unselected_action():
-    v = decide([_ev("a", "x")], _cons(), _pos(unavailable=("tax lots",)))
+    v = decide([_ev("a", "price/technical")], _cons(), _pos(unavailable=("tax lots",)))
     for verdict in v:
         rejected = {a for a, _ in verdict.eliminations}
         assert verdict.action.value not in rejected

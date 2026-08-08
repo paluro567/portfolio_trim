@@ -39,10 +39,16 @@ def render(
     add = lines.append
 
     add(f"# {pos.symbol} — Portfolio Decision Support")
+    stale = ""
+    if pos.price_date is not None and (pos.as_of - pos.price_date).days > 1:
+        stale = (
+            f" **Price is {(pos.as_of - pos.price_date).days} calendar days stale** "
+            f"(last close {pos.price_date.isoformat()})."
+        )
     add(
         f"\n*As of {pos.as_of.isoformat()}. Generated from repository data at "
         f"commit `{meta['commit']}`. Latest price date {pos.price_date or 'unavailable'}; "
-        f"latest feature date {meta.get('feature_date', 'unavailable')}.*"
+        f"latest observed data {meta.get('feature_date', 'unavailable')}.*{stale}"
     )
     add(
         f"\n> **{DISCLOSURE}** This report contains no probability estimate, no expected "
@@ -68,10 +74,17 @@ def render(
 
     # 3-5 by horizon
     add(_sec(3, "Action, directional view and confidence by horizon"))
-    add("| Horizon | Action | Directional view | Confidence (experimental) |")
+    add("| Horizon | 1. Security / directional view | 2. Portfolio action | Evidence strength |")
     add("| --- | --- | --- | --- |")
     for v in verdicts:
-        add(f"| {v.horizon} | **{v.action.value}** | {v.direction.value} | {v.confidence.value} |")
+        add(
+            f"| {v.horizon} | {v.direction.value} | **{v.action.value}** | "
+            f"{v.confidence.value} (experimental) |"
+        )
+    add(
+        "\nColumn 1 is the view on the *security*. Column 2 is what to do about the "
+        "*position*. They are computed separately; portfolio weight cannot reach column 1."
+    )
     add(f"\n*{DISCLOSURE}*")
 
     # 6 position state
@@ -110,6 +123,11 @@ def render(
     for u in pos.unavailable:
         add(f"- {u}")
 
+    add("\n**Portfolio concentration effect on the recommendation**\n")
+    v0 = verdicts[0]
+    sizing = v0.rationale.split("implies", 1)[-1]
+    add(sizing.split(".", 1)[-1].strip() if "." in sizing else sizing.strip())
+
     pol = meta.get("policy") or {}
     add("\n**Portfolio policy**\n")
     if pol.get("status") == "SUPPLIED":
@@ -129,12 +147,14 @@ def render(
         add(f"- Template awaiting the owner's values: `{template}`")
         add(
             "- The system does not invent position limits. Until these are supplied, "
-            "policy-dependent constraints stay NOT_EVALUABLE and the action stays ABSTAIN."
+            "policy-dependent constraints stay NOT_EVALUABLE, no hard-cap breach can "
+            "be detected, and concentration can only suppress ADD - never force TRIM."
         )
 
     # 8-15 evidence by domain
     order = [
         (8, "Market and regime context", "market/regime"),
+        (8.5, "Sector context", "sector"),
         (9, "Company evidence", "company"),
         (10, "Fundamental and earnings evidence", "fundamentals"),
         (11, "Valuation evidence", "valuation"),
@@ -147,6 +167,8 @@ def render(
         items = [e for e in evidence if e.domain == dom]
         if dom == "fundamentals":
             items += [e for e in evidence if e.domain == "earnings"]
+        if dom == "company":
+            items = [e for e in evidence if e.domain == "fundamentals"][:3]
         if not items:
             add("**UNAVAILABLE** — no evidence of this domain is implemented in this slice.")
             continue

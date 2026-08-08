@@ -1,11 +1,18 @@
-"""Directional view, portfolio action, confidence and elimination trace.
+"""Two-stage decision: security view first, portfolio sizing second.
 
-Directional attractiveness and portfolio action are computed separately and
-never collapsed. Deterministic constraints override experimental directional
-evidence. No probability, no composite score, no hidden numeric formula.
+Stage 1 answers "what does the evidence imply about this security over this
+horizon?" using ONLY security evidence. Portfolio weight is not an input and
+cannot reach it.
+
+Stage 2 answers "given that view and how much I already own, what should I do?"
+Portfolio exposure may change the ACTION. It may never change the VIEW.
+
+No probability, no composite score, no hidden numeric formula.
 """
 
 from __future__ import annotations
+
+from decimal import Decimal
 
 from mip.product.contracts import (
     HORIZONS,
@@ -20,22 +27,67 @@ from mip.product.contracts import (
     Status,
 )
 
+# Domains that describe the SECURITY. Portfolio state is deliberately absent.
+SECURITY_DOMAINS = frozenset(
+    {
+        "price/technical",
+        "sector",
+        "market/regime",
+        "fundamentals",
+        "valuation",
+        "earnings",
+        "catalysts",
+        "historical",
+    }
+)
+
+# Descriptive sizing reference, NOT a policy limit. Equal weight across the
+# holdings actually present. Used only to discourage ADD, never to force TRIM.
+ADD_DISCOURAGE_MULTIPLE = Decimal(3)
+
 
 def directional_view(
     evidence: list[Evidence], horizon: str
 ) -> tuple[Direction, list[str], list[str]]:
-    rel = [e for e in evidence if horizon in e.horizons and e.status is not Status.UNAVAILABLE]
+    """Stage 1. Security evidence only."""
+    rel = [
+        e
+        for e in evidence
+        if horizon in e.horizons
+        and e.status is not Status.UNAVAILABLE
+        and e.domain in SECURITY_DOMAINS
+    ]
     signed = [e for e in rel if e.direction in (Direction.POSITIVE, Direction.NEGATIVE)]
     if not rel:
         return Direction.UNAVAILABLE, [], []
     if not signed:
-        return Direction.NEUTRAL, [f"{e.name}={e.value}" for e in rel[:4]], []
-    pos = [e.name for e in signed if e.direction is Direction.POSITIVE]
-    neg = [e.name for e in signed if e.direction is Direction.NEGATIVE]
+        return Direction.NEUTRAL, [f"{e.name}={e.value}" for e in rel[:5]], []
+    pos = [e for e in signed if e.direction is Direction.POSITIVE]
+    neg = [e for e in signed if e.direction is Direction.NEGATIVE]
     contributing = [f"{e.name}={e.value} ({e.direction.value})" for e in signed]
     if pos and neg:
-        return Direction.CONFLICTED, contributing, [f"+{', +'.join(pos)} vs -{', -'.join(neg)}"]
+        conflict = (
+            f"{len(pos)} positive ({', '.join(e.name for e in pos)}) against "
+            f"{len(neg)} negative ({', '.join(e.name for e in neg)})"
+        )
+        return Direction.CONFLICTED, contributing, [conflict]
     return (Direction.POSITIVE if pos else Direction.NEGATIVE), contributing, []
+
+
+def _baseline_action(direction: Direction, n_signed: int) -> tuple[Action, str]:
+    """Stage 1 -> the action the security view alone implies."""
+    if direction is Direction.POSITIVE:
+        return Action.ADD, "the security view is positive"
+    if direction is Direction.NEGATIVE:
+        return (
+            Action.TRIM,
+            f"the security view is negative on {n_signed} independent reading(s)",
+        )
+    if direction is Direction.CONFLICTED:
+        return Action.HOLD, "security evidence conflicts, so no change is indicated"
+    if direction is Direction.UNAVAILABLE:
+        return Action.HOLD, "no security evidence is available for this horizon"
+    return Action.HOLD, "the security view is neutral"
 
 
 def confidence_for(
@@ -45,122 +97,170 @@ def confidence_for(
     conflicts: list[str],
     pos: PositionState,
 ) -> tuple[Confidence, list[str]]:
-    """Transparent caps only. HIGH is prohibited in this slice."""
     basis: list[str] = []
     if direction is Direction.UNAVAILABLE:
-        return Confidence.VERY_LOW, ["directional evidence unavailable for this horizon"]
+        return Confidence.VERY_LOW, ["no security evidence available for this horizon"]
 
-    rel = [e for e in evidence if horizon in e.horizons and e.status is not Status.UNAVAILABLE]
-    domains = {e.domain for e in rel}
-    basis.append(f"{len(domains)} evidence domain(s) available: {', '.join(sorted(domains))}")
+    rel = [
+        e
+        for e in evidence
+        if horizon in e.horizons
+        and e.status is not Status.UNAVAILABLE
+        and e.domain in SECURITY_DOMAINS
+    ]
+    domains = sorted({e.domain for e in rel})
+    basis.append(f"{len(domains)} security-evidence domain(s): {', '.join(domains)}")
 
     cap = Confidence.MODERATE
     if len(domains) >= 2 and not conflicts:
-        basis.append("MODERATE permitted: >=2 independent domains, no major contradiction")
+        basis.append("MODERATE permitted: >=2 independent domains, no contradiction")
     else:
         cap = Confidence.LOW
-        basis.append("capped at LOW: fewer than 2 independent domains or a contradiction present")
-
+        basis.append("capped LOW: fewer than 2 domains, or a contradiction is present")
     if conflicts:
         cap = Confidence.LOW
-        basis.append("capped at LOW: conflicting directional evidence")
-
+        basis.append("capped LOW: directional evidence conflicts")
     if pos.unavailable:
         cap = Confidence.LOW
-        basis.append(f"capped at LOW: material portfolio input missing ({pos.unavailable[0]})")
-
-    # every directional reading in this slice is experimental
-    cap = Confidence.LOW if cap is Confidence.MODERATE else cap
-    basis.append("capped at LOW: all directional readings here are EXPERIMENTAL")
-    basis.append("HIGH is prohibited in the first vertical slice")
+        basis.append(f"capped LOW: portfolio input missing ({pos.unavailable[0]})")
+    if cap is Confidence.MODERATE:
+        cap = Confidence.LOW
+        basis.append("capped LOW: every directional reading here is EXPERIMENTAL")
+    basis.append("HIGH is prohibited in this release")
     return cap, basis
+
+
+def portfolio_adjustment(
+    pos: PositionState, constraints: list[Constraint]
+) -> tuple[str | None, str]:
+    """Stage 2 inputs. Returns (effect, explanation). Never touches the view."""
+    breach = next((c for c in constraints if c.status is ConstraintStatus.BREACH), None)
+    if breach is not None:
+        return (
+            "BREACH",
+            f"{breach.name}: observed {breach.observed} against a limit of "
+            f"{breach.threshold}. {breach.reason}",
+        )
+    if pos.market_weight is None:
+        return (
+            None,
+            "Portfolio market value is not computable, so no sizing effect can be "
+            "assessed. The action reflects the security view alone.",
+        )
+    equal = Decimal(1) / Decimal(pos.portfolio_positions)
+    ratio = pos.market_weight / equal
+    if ratio >= ADD_DISCOURAGE_MULTIPLE:
+        return (
+            "CONCENTRATED",
+            f"The position is {pos.market_weight:.2%} of portfolio market value, "
+            f"{ratio:.1f}x an equal weight across {pos.portfolio_positions} holdings "
+            f"({equal:.2%}). Equal weight is a descriptive reference, not a policy "
+            f"limit: no hard cap has been supplied. This suppresses ADD; it does not "
+            f"by itself justify TRIM.",
+        )
+    return (
+        "NORMAL",
+        f"The position is {pos.market_weight:.2%} of portfolio market value, "
+        f"{ratio:.1f}x an equal weight across {pos.portfolio_positions} holdings. "
+        f"No sizing effect applies.",
+    )
 
 
 def decide(
     evidence: list[Evidence], constraints: list[Constraint], pos: PositionState
 ) -> list[HorizonVerdict]:
+    effect, effect_text = portfolio_adjustment(pos, constraints)
     verdicts: list[HorizonVerdict] = []
-    breached = [c for c in constraints if c.status is ConstraintStatus.BREACH]
-    blocking: list[str] = []
-    cap = next((c for c in constraints if c.name.startswith("Concentration vs hard cap")), None)
-    if cap is not None and cap.status is ConstraintStatus.NOT_EVALUABLE:
-        blocking.append(f"{cap.name} is NOT_EVALUABLE: {cap.reason}")
 
     for horizon, _ in HORIZONS:
         direction, contributing, conflicts = directional_view(evidence, horizon)
         conf, basis = confidence_for(evidence, horizon, direction, conflicts, pos)
+        baseline, why_baseline = _baseline_action(direction, len(contributing))
+
+        action = baseline
+        changed = False
+        if effect == "BREACH":
+            action = Action.EXIT if direction is Direction.NEGATIVE else Action.TRIM
+            changed = action is not baseline
+        elif effect == "CONCENTRATED" and baseline is Action.ADD:
+            action = Action.HOLD
+            changed = True
+
+        if changed and effect == "BREACH":
+            sizing = (
+                f"A deterministic portfolio limit is breached, which overrides the "
+                f"security view. {effect_text} This action is a **risk-limit decision**"
+                + (
+                    ", reinforced by negative security evidence."
+                    if direction is Direction.NEGATIVE
+                    else ", not a bearish view on the company."
+                )
+            )
+        elif changed:
+            sizing = (
+                f"Directional evidence is positive, but existing exposure prevents that "
+                f"from translating into ADD. {effect_text} This is a **position-sizing "
+                f"effect, not a bearish view on the company**."
+            )
+        else:
+            sizing = (
+                f"Portfolio exposure did **not** change this action. {effect_text} "
+                f"The recommendation is driven by the security view."
+            )
+
+        rationale = (
+            f"Security view is {direction.value}: {why_baseline}, which alone implies "
+            f"{baseline.value}. {sizing}"
+        )
 
         elim: list[tuple[str, str]] = []
-        if breached:
-            c = breached[0]
-            action = Action.TRIM
-            rationale = (
-                f"Deterministic constraint BREACHED: {c.name} - observed {c.observed} "
-                f"against a limit of {c.threshold}. {c.reason} A deterministic breach "
-                f"overrides directional evidence, which is EXPERIMENTAL."
-            )
-            elim = [
-                ("ADD", "a hard limit is already breached; adding increases the breach"),
-                ("HOLD", "holding leaves a breached hard limit unaddressed"),
-                (
-                    "EXIT",
-                    "the breach is of a position-size limit; reducing to the limit "
-                    "resolves it, so full liquidation is not required",
-                ),
-                (
-                    "ABSTAIN",
-                    "the breach is deterministic and does not depend on any missing "
-                    "or experimental input",
-                ),
-            ]
-        elif blocking:
-            action = Action.ABSTAIN
-            rationale = (
-                "No portfolio action can be justified. "
-                + " ".join(blocking)
-                + " Directional evidence alone is EXPERIMENTAL and may not drive an action."
-            )
-            elim = [
-                (
-                    "ADD",
-                    "no target allocation has been supplied, so there is no basis for "
-                    "increasing exposure; directional evidence is EXPERIMENTAL",
-                ),
-                (
-                    "HOLD",
-                    "HOLD asserts the position is within policy. The required policy "
-                    "values have not been supplied, so that assertion cannot be made",
-                ),
-                (
-                    "TRIM",
-                    "no deterministic constraint is breached; tax impact is unavailable; "
-                    "directional evidence is not sufficiently negative and is EXPERIMENTAL",
-                ),
-                ("EXIT", "no policy or risk condition requires full liquidation"),
-            ]
-        else:
-            action = Action.HOLD
-            passing = [c for c in constraints if c.status is ConstraintStatus.PASS]
-            rationale = (
-                "Every evaluable deterministic constraint passes"
-                + (f" ({passing[0].reason})" if passing else "")
-                + ". The position is within policy, so no action is required. The "
-                "directional view is reported separately and, being EXPERIMENTAL, does "
-                "not by itself justify trading."
-            )
-            elim = [
-                (
-                    "ADD",
-                    "no supplied policy value calls for increasing exposure; "
-                    "directional evidence is EXPERIMENTAL",
-                ),
-                ("TRIM", "no deterministic constraint is breached"),
-                ("EXIT", "no policy or risk condition requires full liquidation"),
-                (
-                    "ABSTAIN",
-                    "sufficient policy and portfolio information is available to act",
-                ),
-            ]
+        for cand in (Action.ADD, Action.HOLD, Action.TRIM, Action.EXIT):
+            if cand is action:
+                continue
+            if cand is Action.ADD:
+                elim.append(
+                    (
+                        "ADD",
+                        (
+                            "existing exposure suppresses it"
+                            if effect == "CONCENTRATED"
+                            else (
+                                "a portfolio limit is breached"
+                                if effect == "BREACH"
+                                else f"the security view is {direction.value}, not positive"
+                            )
+                        ),
+                    )
+                )
+            elif cand is Action.HOLD:
+                elim.append(
+                    (
+                        "HOLD",
+                        (
+                            "a breached limit cannot be left unaddressed"
+                            if effect == "BREACH"
+                            else f"the security view is {direction.value}, which indicates "
+                            f"{baseline.value} rather than no change"
+                        ),
+                    )
+                )
+            elif cand is Action.TRIM:
+                elim.append(
+                    (
+                        "TRIM",
+                        "no limit is breached and the security view is not negative; "
+                        "concentration alone does not justify reducing exposure without a "
+                        "supplied hard cap",
+                    )
+                )
+            else:
+                elim.append(
+                    (
+                        "EXIT",
+                        "the security view is not negative enough, and no risk limit "
+                        "requires full liquidation",
+                    )
+                )
 
         verdicts.append(
             HorizonVerdict(

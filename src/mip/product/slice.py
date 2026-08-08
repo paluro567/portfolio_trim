@@ -261,36 +261,59 @@ def gather_evidence(session, symbol: str, as_of: date) -> list[Evidence]:
                 )
             )
 
-    # -- fundamentals / earnings / valuation / catalysts
-    for dom, nm, why in (
-        (
-            "fundamentals",
-            "fundamental_snapshot",
-            "no point-in-time fundamentals are stored; the fundamentals-driven models emit "
-            "constant output",
-        ),
-        ("earnings", "next_earnings_date", "earnings_events table is not present in this database"),
-        ("valuation", "valuation_multiples", "requires point-in-time fundamentals (unavailable)"),
-        (
-            "catalysts",
-            "dated_catalysts",
-            "no PIT-verified catalyst source is wired into this slice",
-        ),
+    # -- sector relative behaviour
+    for name, desc, hz in (
+        ("rel_ret_sector_21d", "21-session return vs the sector ETF", ("1w", "1m")),
+        ("rel_ret_sector_63d", "63-session return vs the sector ETF", ("1m", "3m")),
+        ("rel_ret_sector_126d", "126-session return vs the sector ETF", ("3m", "6m")),
     ):
+        row = _feat(session, symbol, name, as_of)
+        if row is None:
+            ev.append(
+                Evidence(
+                    name,
+                    "sector",
+                    Status.UNAVAILABLE,
+                    "-",
+                    "feature_store_daily",
+                    None,
+                    hz,
+                    desc,
+                    "sector-relative feature not computed",
+                    missing_reason="no non-null value at or before as_of",
+                )
+            )
+            continue
+        val, fdate = float(row[0]), row[1]
+        pc = _pctile(session, symbol, name, as_of, val)
+        direction = Direction.NEUTRAL
+        if pc is not None:
+            direction = (
+                Direction.POSITIVE
+                if pc >= 0.70
+                else Direction.NEGATIVE if pc <= 0.30 else Direction.NEUTRAL
+            )
+        pctxt = f"; {pc:.0%} of its own history" if pc is not None else ""
         ev.append(
             Evidence(
-                nm,
-                dom,
-                Status.UNAVAILABLE,
-                "—",
-                "—",
-                None,
-                ALL_H,
-                f"{dom} evidence for {symbol}",
-                "Section renders as UNAVAILABLE.",
-                missing_reason=why,
+                name,
+                "sector",
+                Status.DESCRIPTIVE,
+                f"{val:+.4f}",
+                "feature_store_daily",
+                fdate,
+                hz,
+                f"{desc}{pctxt}",
+                "Measured relative-performance fact. Directional reading is " "EXPERIMENTAL.",
+                direction=direction,
             )
         )
+
+    # -- fundamentals and valuation (point-in-time snapshot)
+    ev.extend(_fundamentals(session, symbol, as_of))
+
+    # -- earnings and catalysts (dated events, PIT)
+    ev.extend(_earnings(session, symbol, as_of))
 
     # -- historical forward-return distribution, own history, strictly PIT
     ev.extend(_historical(session, symbol, as_of))
@@ -487,3 +510,209 @@ def evaluate_constraints(pos: PositionState, policy=None) -> list[Constraint]:
         )
     )
     return cs
+
+
+def _fundamentals(session, symbol: str, as_of: date) -> list[Evidence]:
+    """Company fundamentals and valuation multiples from the PIT snapshot."""
+    row = session.execute(
+        text(
+            "select f.as_of_date, f.trailing_pe, f.forward_pe, f.price_to_book, "
+            "f.profit_margin, f.debt_to_equity, f.beta, f.market_cap, f.revenue_ttm "
+            "from company_fundamentals f join instruments i on i.id=f.instrument_id "
+            "where i.symbol=:s and f.as_of_date<=:d order by f.as_of_date desc limit 1"
+        ),
+        {"s": symbol, "d": as_of},
+    ).first()
+    if row is None:
+        return [
+            Evidence(
+                n,
+                dom,
+                Status.UNAVAILABLE,
+                "-",
+                "company_fundamentals",
+                None,
+                ALL_H,
+                d,
+                "no snapshot at or before as_of",
+                missing_reason="company_fundamentals holds no row at or before as_of",
+            )
+            for n, dom, d in (
+                ("fundamental_snapshot", "fundamentals", "company fundamentals"),
+                ("valuation_multiples", "valuation", "valuation multiples"),
+            )
+        ]
+    fdate, tpe, fpe, pb, margin, de, beta, mcap, rev = row
+    out: list[Evidence] = []
+
+    def add(name, dom, val, expl, direction=Direction.NEUTRAL):
+        out.append(
+            Evidence(
+                name,
+                dom,
+                Status.DESCRIPTIVE,
+                val,
+                "company_fundamentals",
+                fdate,
+                ALL_H,
+                expl,
+                "Vendor snapshot. A single dated observation, not a time series, so "
+                "no trend or historical percentile can be computed. Directional "
+                "reading is EXPERIMENTAL.",
+                direction=direction,
+            )
+        )
+
+    if margin is not None:
+        add("profit_margin", "fundamentals", f"{float(margin):.2%}", "trailing net profit margin")
+    if de is not None:
+        add(
+            "debt_to_equity",
+            "fundamentals",
+            f"{float(de):.2f}",
+            "debt to equity; lower is less levered",
+        )
+    if beta is not None:
+        add(
+            "beta",
+            "fundamentals",
+            f"{float(beta):.3f}",
+            "sensitivity to the market; >1 amplifies market moves",
+        )
+    if mcap is not None:
+        add("market_cap", "fundamentals", f"${float(mcap) / 1e9:,.1f}B", "market capitalisation")
+    if rev is not None:
+        add("revenue_ttm", "fundamentals", f"${float(rev) / 1e9:,.1f}B", "trailing revenue")
+    if tpe is not None:
+        add("trailing_pe", "valuation", f"{float(tpe):.2f}", "trailing price/earnings")
+    if fpe is not None and tpe is not None:
+        cheaper = float(fpe) < float(tpe)
+        add(
+            "forward_pe",
+            "valuation",
+            f"{float(fpe):.2f}",
+            "forward price/earnings; "
+            + (
+                "below the trailing multiple, implying expected earnings growth"
+                if cheaper
+                else "above the trailing multiple, implying expected earnings decline"
+            ),
+            Direction.POSITIVE if cheaper else Direction.NEGATIVE,
+        )
+    elif fpe is not None:
+        add("forward_pe", "valuation", f"{float(fpe):.2f}", "forward price/earnings")
+    if pb is not None:
+        add("price_to_book", "valuation", f"{float(pb):.2f}", "price to book value")
+    return out
+
+
+def _earnings(session, symbol: str, as_of: date) -> list[Evidence]:
+    """Dated earnings events. Strictly PIT: observed_at <= as_of."""
+    nxt = session.execute(
+        text(
+            "select e.earnings_date, e.is_confirmed, e.eps_estimate from earnings_observations e "
+            "join instruments i on i.id=e.instrument_id where i.symbol=:s "
+            "and e.observed_at::date<=:d and e.earnings_date>=:d "
+            "order by e.earnings_date asc limit 1"
+        ),
+        {"s": symbol, "d": as_of},
+    ).first()
+    prev = session.execute(
+        text(
+            "select e.earnings_date, e.eps_estimate, e.eps_actual from earnings_observations e "
+            "join instruments i on i.id=e.instrument_id where i.symbol=:s "
+            "and e.observed_at::date<=:d and e.earnings_date<:d and e.eps_actual is not null "
+            "order by e.earnings_date desc limit 1"
+        ),
+        {"s": symbol, "d": as_of},
+    ).first()
+    out: list[Evidence] = []
+    if nxt is None:
+        out.append(
+            Evidence(
+                "next_earnings_date",
+                "catalysts",
+                Status.UNAVAILABLE,
+                "-",
+                "earnings_observations",
+                None,
+                ALL_H,
+                "next scheduled earnings date",
+                "no future dated event observed at or before as_of",
+                missing_reason="no earnings_observations row with earnings_date >= as_of",
+            )
+        )
+    else:
+        edate, confirmed, est = nxt
+        days = (edate - as_of).days
+        hz = ("1w",) if days <= 7 else ("1w", "1m") if days <= 31 else ("1m", "3m")
+        out.append(
+            Evidence(
+                "next_earnings_date",
+                "catalysts",
+                Status.DESCRIPTIVE,
+                f"{edate.isoformat()} ({days}d away"
+                + (", confirmed" if confirmed else ", estimated")
+                + ")",
+                "earnings_observations",
+                edate,
+                hz,
+                "Next scheduled earnings release. A dated, known event-risk window.",
+                "A date, not a forecast. It says when uncertainty resolves, not how. "
+                "Event risk is elevated into this date at short horizons.",
+            )
+        )
+        if est is not None:
+            out.append(
+                Evidence(
+                    "eps_estimate_next",
+                    "catalysts",
+                    Status.DESCRIPTIVE,
+                    f"{float(est):.2f}",
+                    "earnings_observations",
+                    edate,
+                    hz,
+                    "consensus EPS estimate for the next release",
+                    "A vendor consensus figure, not a platform forecast.",
+                )
+            )
+    if prev is not None:
+        pdate, pest, pact = prev
+        if pest is not None and pact is not None:
+            surprise = float(pact) - float(pest)
+            pct = surprise / abs(float(pest)) if float(pest) else 0.0
+            out.append(
+                Evidence(
+                    "last_earnings_surprise",
+                    "earnings",
+                    Status.DESCRIPTIVE,
+                    f"actual {float(pact):.2f} vs estimate {float(pest):.2f} " f"({pct:+.1%})",
+                    "earnings_observations",
+                    pdate,
+                    ALL_H,
+                    f"Most recent reported quarter ({pdate.isoformat()}).",
+                    "One observation. Not a pattern, and no predictive reliability "
+                    "has been established. Directional reading is EXPERIMENTAL.",
+                    direction=(
+                        Direction.POSITIVE
+                        if surprise > 0
+                        else Direction.NEGATIVE if surprise < 0 else Direction.NEUTRAL
+                    ),
+                )
+            )
+    else:
+        out.append(
+            Evidence(
+                "last_earnings_surprise",
+                "earnings",
+                Status.UNAVAILABLE,
+                "-",
+                "earnings_observations",
+                None,
+                ALL_H,
+                "last reported EPS vs estimate",
+                "no completed report with both estimate and actual",
+                missing_reason="earnings_observations has no eps_actual before as_of",
+            )
+        )
+    return out

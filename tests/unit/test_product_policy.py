@@ -207,17 +207,21 @@ def test_breach_overrides_positive_directional_evidence(tmp_path):
     assert {x.action for x in v} == {Action.TRIM}
 
 
-def test_pass_with_negative_evidence_still_holds(tmp_path):
-    """NEGATIVE direction + within policy + experimental only -> HOLD."""
+def test_pass_with_negative_evidence_trims_on_the_security_view(tmp_path):
+    """Within policy, a NEGATIVE security view still drives TRIM - and the report
+    must say the action was NOT caused by concentration."""
     pol = load_policy(_write(tmp_path, _valid(cap="12.0")))
     v = decide(_ev(Direction.NEGATIVE), evaluate_constraints(_pos(), pol), _pos())
-    assert {x.action for x in v} == {Action.HOLD}
+    assert {x.action for x in v} == {Action.TRIM}
     assert all(x.direction is Direction.NEGATIVE for x in v)
 
 
-def test_no_policy_still_abstains():
-    v = decide(_ev(), evaluate_constraints(_pos(), load_policy()), _pos())
-    assert {x.action for x in v} == {Action.ABSTAIN}
+def test_no_policy_still_acts_on_the_security_view():
+    """Without a policy the security view still drives an action - never ABSTAIN."""
+    v = decide(_ev(Direction.NEGATIVE), evaluate_constraints(_pos(), load_policy()), _pos())
+    assert {x.action for x in v} == {Action.TRIM}
+    assert all(x.direction is Direction.NEGATIVE for x in v)
+    assert any("did **not** change this action" in x.rationale for x in v)
 
 
 def test_policy_does_not_rewrite_directional_view(tmp_path):
@@ -233,7 +237,7 @@ def test_elimination_trace_consistent_under_breach(tmp_path):
     for v in decide(_ev(), evaluate_constraints(_pos(), pol), _pos()):
         rejected = {a for a, _ in v.eliminations}
         assert v.action.value not in rejected
-        assert {"ADD", "HOLD", "EXIT", "ABSTAIN"} == rejected
+        assert rejected == {"ADD", "HOLD", "TRIM", "EXIT"} - {v.action.value}
 
 
 def test_policy_provenance_reaches_the_report_bundle():

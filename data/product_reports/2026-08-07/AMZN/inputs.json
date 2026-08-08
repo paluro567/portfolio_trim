@@ -1,0 +1,797 @@
+{
+  "constraints": [
+    {
+      "name": "Concentration vs hard cap (market value)",
+      "observed": "11.44%",
+      "reason": "Market-value weight is known, but no hard cap has been supplied by the portfolio owner. Required and unset: hard_cap_pct, core_target_pct, policy_version, effective_date. The system does not invent position limits.",
+      "status": "NOT_EVALUABLE",
+      "threshold": "unavailable"
+    },
+    {
+      "name": "Deviation from core target (market value)",
+      "observed": "11.44%",
+      "reason": "No core target supplied by the portfolio owner. Required and unset: {miss}.",
+      "status": "NOT_EVALUABLE",
+      "threshold": "unavailable"
+    },
+    {
+      "name": "Concentration (cost basis)",
+      "observed": "9.04%",
+      "reason": "Cost-basis weight is reported as a fact only. It is NOT a concentration measure: concentration risk is a function of current market value.",
+      "status": "NOT_EVALUABLE",
+      "threshold": "not applicable"
+    },
+    {
+      "name": "Liquidity (days to liquidate)",
+      "observed": "unavailable",
+      "reason": "Average daily volume is not wired into this slice.",
+      "status": "NOT_EVALUABLE",
+      "threshold": "unavailable"
+    },
+    {
+      "name": "Tax impact of a sale",
+      "observed": "unavailable",
+      "reason": "Tax lots and acquisition dates are unavailable; the broker export records average cost only. Realised gain or loss on a partial sale cannot be computed.",
+      "status": "NOT_EVALUABLE",
+      "threshold": "unavailable"
+    }
+  ],
+  "evidence": [
+    {
+      "as_of": "2026-07-31",
+      "direction": "POSITIVE",
+      "domain": "price/technical",
+      "explanation": "21-session total return; 90% of its own history",
+      "horizons": [
+        "1w",
+        "1m"
+      ],
+      "limitations": "A measured price fact. Its directional reading is EXPERIMENTAL: no predictive reliability has been established for this feature.",
+      "missing_reason": null,
+      "name": "ret_21d",
+      "source": "feature_store_daily",
+      "status": "DESCRIPTIVE",
+      "value": "+0.1236"
+    },
+    {
+      "as_of": "2026-07-31",
+      "direction": "NEUTRAL",
+      "domain": "price/technical",
+      "explanation": "63-session total return; 39% of its own history",
+      "horizons": [
+        "1m",
+        "3m"
+      ],
+      "limitations": "A measured price fact. Its directional reading is EXPERIMENTAL: no predictive reliability has been established for this feature.",
+      "missing_reason": null,
+      "name": "ret_63d",
+      "source": "feature_store_daily",
+      "status": "DESCRIPTIVE",
+      "value": "+0.0246"
+    },
+    {
+      "as_of": "2026-07-31",
+      "direction": "NEUTRAL",
+      "domain": "price/technical",
+      "explanation": "126-session total return; 51% of its own history",
+      "horizons": [
+        "3m",
+        "6m"
+      ],
+      "limitations": "A measured price fact. Its directional reading is EXPERIMENTAL: no predictive reliability has been established for this feature.",
+      "missing_reason": null,
+      "name": "ret_126d",
+      "source": "feature_store_daily",
+      "status": "DESCRIPTIVE",
+      "value": "+0.1235"
+    },
+    {
+      "as_of": "2026-07-31",
+      "direction": "NEUTRAL",
+      "domain": "price/technical",
+      "explanation": "252-session total return; 40% of its own history",
+      "horizons": [
+        "6m",
+        "1y"
+      ],
+      "limitations": "A measured price fact. Its directional reading is EXPERIMENTAL: no predictive reliability has been established for this feature.",
+      "missing_reason": null,
+      "name": "ret_252d",
+      "source": "feature_store_daily",
+      "status": "DESCRIPTIVE",
+      "value": "+0.1798"
+    },
+    {
+      "as_of": "2026-07-31",
+      "direction": "NEUTRAL",
+      "domain": "price/technical",
+      "explanation": "21-session annualised volatility; 97% of its own history",
+      "horizons": [
+        "1w",
+        "1m",
+        "3m",
+        "6m",
+        "1y"
+      ],
+      "limitations": "A measured price fact. Its directional reading is EXPERIMENTAL: no predictive reliability has been established for this feature.",
+      "missing_reason": null,
+      "name": "vol_21d",
+      "source": "feature_store_daily",
+      "status": "DESCRIPTIVE",
+      "value": "+0.6038"
+    },
+    {
+      "as_of": "2026-07-31",
+      "direction": "NEUTRAL",
+      "domain": "price/technical",
+      "explanation": "distance below the 52-week high; 82% of its own history",
+      "horizons": [
+        "1w",
+        "1m",
+        "3m",
+        "6m",
+        "1y"
+      ],
+      "limitations": "A measured price fact. Its directional reading is EXPERIMENTAL: no predictive reliability has been established for this feature.",
+      "missing_reason": null,
+      "name": "dist_52w_high",
+      "source": "feature_store_daily",
+      "status": "DESCRIPTIVE",
+      "value": "-0.0124"
+    },
+    {
+      "as_of": "2026-07-31",
+      "direction": "POSITIVE",
+      "domain": "price/technical",
+      "explanation": "price relative to the 50-session average; 86% of its own history",
+      "horizons": [
+        "1w",
+        "1m"
+      ],
+      "limitations": "A measured price fact. Its directional reading is EXPERIMENTAL: no predictive reliability has been established for this feature.",
+      "missing_reason": null,
+      "name": "price_to_ma50",
+      "source": "feature_store_daily",
+      "status": "DESCRIPTIVE",
+      "value": "+0.1012"
+    },
+    {
+      "as_of": "2026-07-31",
+      "direction": "NEUTRAL",
+      "domain": "price/technical",
+      "explanation": "price relative to the 200-session average; 65% of its own history",
+      "horizons": [
+        "3m",
+        "6m",
+        "1y"
+      ],
+      "limitations": "A measured price fact. Its directional reading is EXPERIMENTAL: no predictive reliability has been established for this feature.",
+      "missing_reason": null,
+      "name": "price_to_ma200",
+      "source": "feature_store_daily",
+      "status": "DESCRIPTIVE",
+      "value": "+0.1556"
+    },
+    {
+      "as_of": "2026-07-31",
+      "direction": "NEUTRAL",
+      "domain": "price/technical",
+      "explanation": "63-session return relative to SPY; 38% of its own history",
+      "horizons": [
+        "1m",
+        "3m"
+      ],
+      "limitations": "A measured price fact. Its directional reading is EXPERIMENTAL: no predictive reliability has been established for this feature.",
+      "missing_reason": null,
+      "name": "rel_ret_spy_63d",
+      "source": "feature_store_daily",
+      "status": "DESCRIPTIVE",
+      "value": "-0.0176"
+    },
+    {
+      "as_of": "2026-07-31",
+      "direction": "NEUTRAL",
+      "domain": "market/regime",
+      "explanation": "market in a bull regime (SPY above its 200-session average)",
+      "horizons": [
+        "1w",
+        "1m",
+        "3m",
+        "6m",
+        "1y"
+      ],
+      "limitations": "Market state fact. Applies to every holding, not specific to this one.",
+      "missing_reason": null,
+      "name": "regime_bull",
+      "source": "feature_store_daily",
+      "status": "DESCRIPTIVE",
+      "value": "+1.0000"
+    },
+    {
+      "as_of": "2026-08-07",
+      "direction": "NEUTRAL",
+      "domain": "market/regime",
+      "explanation": "VIX percentile over the trailing year",
+      "horizons": [
+        "1w",
+        "1m",
+        "3m",
+        "6m",
+        "1y"
+      ],
+      "limitations": "Market state fact. Applies to every holding, not specific to this one.",
+      "missing_reason": null,
+      "name": "vix_pctile_252d",
+      "source": "feature_store_daily",
+      "status": "DESCRIPTIVE",
+      "value": "+0.4802"
+    },
+    {
+      "as_of": "2026-08-07",
+      "direction": "NEUTRAL",
+      "domain": "market/regime",
+      "explanation": "share of sector ETFs above their 50-session average",
+      "horizons": [
+        "1w",
+        "1m",
+        "3m",
+        "6m",
+        "1y"
+      ],
+      "limitations": "Market state fact. Applies to every holding, not specific to this one.",
+      "missing_reason": null,
+      "name": "sector_breadth_ma50",
+      "source": "feature_store_daily",
+      "status": "DESCRIPTIVE",
+      "value": "+0.9000"
+    },
+    {
+      "as_of": "2026-07-31",
+      "direction": "POSITIVE",
+      "domain": "sector",
+      "explanation": "21-session return vs the sector ETF; 97% of its own history",
+      "horizons": [
+        "1w",
+        "1m"
+      ],
+      "limitations": "Measured relative-performance fact. Directional reading is EXPERIMENTAL.",
+      "missing_reason": null,
+      "name": "rel_ret_sector_21d",
+      "source": "feature_store_daily",
+      "status": "DESCRIPTIVE",
+      "value": "+0.1406"
+    },
+    {
+      "as_of": "2026-07-31",
+      "direction": "NEUTRAL",
+      "domain": "sector",
+      "explanation": "63-session return vs the sector ETF; 55% of its own history",
+      "horizons": [
+        "1m",
+        "3m"
+      ],
+      "limitations": "Measured relative-performance fact. Directional reading is EXPERIMENTAL.",
+      "missing_reason": null,
+      "name": "rel_ret_sector_63d",
+      "source": "feature_store_daily",
+      "status": "DESCRIPTIVE",
+      "value": "+0.0417"
+    },
+    {
+      "as_of": "2026-07-31",
+      "direction": "POSITIVE",
+      "domain": "sector",
+      "explanation": "126-session return vs the sector ETF; 73% of its own history",
+      "horizons": [
+        "3m",
+        "6m"
+      ],
+      "limitations": "Measured relative-performance fact. Directional reading is EXPERIMENTAL.",
+      "missing_reason": null,
+      "name": "rel_ret_sector_126d",
+      "source": "feature_store_daily",
+      "status": "DESCRIPTIVE",
+      "value": "+0.1617"
+    },
+    {
+      "as_of": "2026-08-07",
+      "direction": "NEUTRAL",
+      "domain": "fundamentals",
+      "explanation": "trailing net profit margin",
+      "horizons": [
+        "1w",
+        "1m",
+        "3m",
+        "6m",
+        "1y"
+      ],
+      "limitations": "Vendor snapshot. A single dated observation, not a time series, so no trend or historical percentile can be computed. Directional reading is EXPERIMENTAL.",
+      "missing_reason": null,
+      "name": "profit_margin",
+      "source": "company_fundamentals",
+      "status": "DESCRIPTIVE",
+      "value": "17.44%"
+    },
+    {
+      "as_of": "2026-08-07",
+      "direction": "NEUTRAL",
+      "domain": "fundamentals",
+      "explanation": "debt to equity; lower is less levered",
+      "horizons": [
+        "1w",
+        "1m",
+        "3m",
+        "6m",
+        "1y"
+      ],
+      "limitations": "Vendor snapshot. A single dated observation, not a time series, so no trend or historical percentile can be computed. Directional reading is EXPERIMENTAL.",
+      "missing_reason": null,
+      "name": "debt_to_equity",
+      "source": "company_fundamentals",
+      "status": "DESCRIPTIVE",
+      "value": "45.62"
+    },
+    {
+      "as_of": "2026-08-07",
+      "direction": "NEUTRAL",
+      "domain": "fundamentals",
+      "explanation": "sensitivity to the market; >1 amplifies market moves",
+      "horizons": [
+        "1w",
+        "1m",
+        "3m",
+        "6m",
+        "1y"
+      ],
+      "limitations": "Vendor snapshot. A single dated observation, not a time series, so no trend or historical percentile can be computed. Directional reading is EXPERIMENTAL.",
+      "missing_reason": null,
+      "name": "beta",
+      "source": "company_fundamentals",
+      "status": "DESCRIPTIVE",
+      "value": "1.454"
+    },
+    {
+      "as_of": "2026-08-07",
+      "direction": "NEUTRAL",
+      "domain": "fundamentals",
+      "explanation": "market capitalisation",
+      "horizons": [
+        "1w",
+        "1m",
+        "3m",
+        "6m",
+        "1y"
+      ],
+      "limitations": "Vendor snapshot. A single dated observation, not a time series, so no trend or historical percentile can be computed. Directional reading is EXPERIMENTAL.",
+      "missing_reason": null,
+      "name": "market_cap",
+      "source": "company_fundamentals",
+      "status": "DESCRIPTIVE",
+      "value": "$2,960.6B"
+    },
+    {
+      "as_of": "2026-08-07",
+      "direction": "NEUTRAL",
+      "domain": "fundamentals",
+      "explanation": "trailing revenue",
+      "horizons": [
+        "1w",
+        "1m",
+        "3m",
+        "6m",
+        "1y"
+      ],
+      "limitations": "Vendor snapshot. A single dated observation, not a time series, so no trend or historical percentile can be computed. Directional reading is EXPERIMENTAL.",
+      "missing_reason": null,
+      "name": "revenue_ttm",
+      "source": "company_fundamentals",
+      "status": "DESCRIPTIVE",
+      "value": "$775.7B"
+    },
+    {
+      "as_of": "2026-08-07",
+      "direction": "NEUTRAL",
+      "domain": "valuation",
+      "explanation": "trailing price/earnings",
+      "horizons": [
+        "1w",
+        "1m",
+        "3m",
+        "6m",
+        "1y"
+      ],
+      "limitations": "Vendor snapshot. A single dated observation, not a time series, so no trend or historical percentile can be computed. Directional reading is EXPERIMENTAL.",
+      "missing_reason": null,
+      "name": "trailing_pe",
+      "source": "company_fundamentals",
+      "status": "DESCRIPTIVE",
+      "value": "22.06"
+    },
+    {
+      "as_of": "2026-08-07",
+      "direction": "NEGATIVE",
+      "domain": "valuation",
+      "explanation": "forward price/earnings; above the trailing multiple, implying expected earnings decline",
+      "horizons": [
+        "1w",
+        "1m",
+        "3m",
+        "6m",
+        "1y"
+      ],
+      "limitations": "Vendor snapshot. A single dated observation, not a time series, so no trend or historical percentile can be computed. Directional reading is EXPERIMENTAL.",
+      "missing_reason": null,
+      "name": "forward_pe",
+      "source": "company_fundamentals",
+      "status": "DESCRIPTIVE",
+      "value": "26.57"
+    },
+    {
+      "as_of": "2026-08-07",
+      "direction": "NEUTRAL",
+      "domain": "valuation",
+      "explanation": "price to book value",
+      "horizons": [
+        "1w",
+        "1m",
+        "3m",
+        "6m",
+        "1y"
+      ],
+      "limitations": "Vendor snapshot. A single dated observation, not a time series, so no trend or historical percentile can be computed. Directional reading is EXPERIMENTAL.",
+      "missing_reason": null,
+      "name": "price_to_book",
+      "source": "company_fundamentals",
+      "status": "DESCRIPTIVE",
+      "value": "5.37"
+    },
+    {
+      "as_of": "2026-10-29",
+      "direction": "NEUTRAL",
+      "domain": "catalysts",
+      "explanation": "Next scheduled earnings release. A dated, known event-risk window.",
+      "horizons": [
+        "1m",
+        "3m"
+      ],
+      "limitations": "A date, not a forecast. It says when uncertainty resolves, not how. Event risk is elevated into this date at short horizons.",
+      "missing_reason": null,
+      "name": "next_earnings_date",
+      "source": "earnings_observations",
+      "status": "DESCRIPTIVE",
+      "value": "2026-10-29 (83d away, estimated)"
+    },
+    {
+      "as_of": "2026-10-29",
+      "direction": "NEUTRAL",
+      "domain": "catalysts",
+      "explanation": "consensus EPS estimate for the next release",
+      "horizons": [
+        "1m",
+        "3m"
+      ],
+      "limitations": "A vendor consensus figure, not a platform forecast.",
+      "missing_reason": null,
+      "name": "eps_estimate_next",
+      "source": "earnings_observations",
+      "status": "DESCRIPTIVE",
+      "value": "1.95"
+    },
+    {
+      "as_of": "2026-07-30",
+      "direction": "POSITIVE",
+      "domain": "earnings",
+      "explanation": "Most recent reported quarter (2026-07-30).",
+      "horizons": [
+        "1w",
+        "1m",
+        "3m",
+        "6m",
+        "1y"
+      ],
+      "limitations": "One observation. Not a pattern, and no predictive reliability has been established. Directional reading is EXPERIMENTAL.",
+      "missing_reason": null,
+      "name": "last_earnings_surprise",
+      "source": "earnings_observations",
+      "status": "DESCRIPTIVE",
+      "value": "actual 5.75 vs estimate 1.83 (+214.2%)"
+    },
+    {
+      "as_of": "2026-07-31",
+      "direction": "NEUTRAL",
+      "domain": "historical",
+      "explanation": "Unconditional distribution of AMZN's own completed 1w forward returns, using only sessions at or before 2026-08-07.",
+      "horizons": [
+        "1w"
+      ],
+      "limitations": "Point-in-time: yes (no window extends past as_of). Survivorship: this symbol survived the whole sample, so the distribution is conditioned on survival. Universe selection: this symbol is in the sample because it is a current holding. Overlapping windows: yes, so n overstates independent observations. DESCRIPTIVE ONLY - this is history, not a forecast.",
+      "missing_reason": null,
+      "name": "forward_return_1w",
+      "source": "daily_prices",
+      "status": "DESCRIPTIVE",
+      "value": "median +0.56%, p10 -4.81%, p90 +5.65%, positive 56%, n={len(fwd)}"
+    },
+    {
+      "as_of": "2026-07-31",
+      "direction": "NEUTRAL",
+      "domain": "historical",
+      "explanation": "Unconditional distribution of AMZN's own completed 1m forward returns, using only sessions at or before 2026-08-07.",
+      "horizons": [
+        "1m"
+      ],
+      "limitations": "Point-in-time: yes (no window extends past as_of). Survivorship: this symbol survived the whole sample, so the distribution is conditioned on survival. Universe selection: this symbol is in the sample because it is a current holding. Overlapping windows: yes, so n overstates independent observations. DESCRIPTIVE ONLY - this is history, not a forecast.",
+      "missing_reason": null,
+      "name": "forward_return_1m",
+      "source": "daily_prices",
+      "status": "DESCRIPTIVE",
+      "value": "median +2.73%, p10 -9.15%, p90 +12.48%, positive 63%, n={len(fwd)}"
+    },
+    {
+      "as_of": "2026-07-31",
+      "direction": "NEUTRAL",
+      "domain": "historical",
+      "explanation": "Unconditional distribution of AMZN's own completed 3m forward returns, using only sessions at or before 2026-08-07.",
+      "horizons": [
+        "3m"
+      ],
+      "limitations": "Point-in-time: yes (no window extends past as_of). Survivorship: this symbol survived the whole sample, so the distribution is conditioned on survival. Universe selection: this symbol is in the sample because it is a current holding. Overlapping windows: yes, so n overstates independent observations. DESCRIPTIVE ONLY - this is history, not a forecast.",
+      "missing_reason": null,
+      "name": "forward_return_3m",
+      "source": "daily_prices",
+      "status": "DESCRIPTIVE",
+      "value": "median +7.20%, p10 -12.24%, p90 +25.23%, positive 68%, n={len(fwd)}"
+    },
+    {
+      "as_of": "2026-07-31",
+      "direction": "NEUTRAL",
+      "domain": "historical",
+      "explanation": "Unconditional distribution of AMZN's own completed 6m forward returns, using only sessions at or before 2026-08-07.",
+      "horizons": [
+        "6m"
+      ],
+      "limitations": "Point-in-time: yes (no window extends past as_of). Survivorship: this symbol survived the whole sample, so the distribution is conditioned on survival. Universe selection: this symbol is in the sample because it is a current holding. Overlapping windows: yes, so n overstates independent observations. DESCRIPTIVE ONLY - this is history, not a forecast.",
+      "missing_reason": null,
+      "name": "forward_return_6m",
+      "source": "daily_prices",
+      "status": "DESCRIPTIVE",
+      "value": "median +11.65%, p10 -12.15%, p90 +42.20%, positive 75%, n={len(fwd)}"
+    },
+    {
+      "as_of": "2026-07-31",
+      "direction": "NEUTRAL",
+      "domain": "historical",
+      "explanation": "Unconditional distribution of AMZN's own completed 1y forward returns, using only sessions at or before 2026-08-07.",
+      "horizons": [
+        "1y"
+      ],
+      "limitations": "Point-in-time: yes (no window extends past as_of). Survivorship: this symbol survived the whole sample, so the distribution is conditioned on survival. Universe selection: this symbol is in the sample because it is a current holding. Overlapping windows: yes, so n overstates independent observations. DESCRIPTIVE ONLY - this is history, not a forecast.",
+      "missing_reason": null,
+      "name": "forward_return_1y",
+      "source": "daily_prices",
+      "status": "DESCRIPTIVE",
+      "value": "median +27.88%, p10 -7.48%, p90 +72.25%, positive 86%, n={len(fwd)}"
+    }
+  ],
+  "meta": {
+    "balances_path": "data/peter_real_opening_balances_2026-07-16.csv",
+    "balances_sha256": "5f040ce30a401570b54778fed52a99379f676a33c41cb058d2393c7a215c0adc",
+    "commit": "7faa118",
+    "feature_date": "2026-08-07",
+    "generated_at": "2026-08-08T01:54:52.714445+00:00",
+    "policy": {
+      "missing": [
+        "hard_cap_pct",
+        "core_target_pct",
+        "policy_version",
+        "effective_date"
+      ],
+      "path": "config/policy/personal.yaml",
+      "reason": "policy values have not been supplied by the portfolio owner; the system does not invent them",
+      "status": "UNAVAILABLE"
+    }
+  },
+  "position": {
+    "as_of": "2026-08-07",
+    "average_cost": "186.84",
+    "cost_basis": "15320.88",
+    "cost_weight": "0.090400",
+    "market_price": "271.58",
+    "market_value": "22269.56",
+    "market_weight": "0.114386",
+    "portfolio_market_value": "194687.67",
+    "portfolio_positions": 52,
+    "price_date": "2026-07-31",
+    "quantity": "82",
+    "symbol": "AMZN",
+    "unavailable": [
+      "tax lots and acquisition dates (broker export records average cost only)"
+    ],
+    "unrealized_pct": "0.4535",
+    "unrealized_pnl": "6948.68"
+  },
+  "verdicts": [
+    {
+      "action": "HOLD",
+      "confidence": "LOW",
+      "confidence_basis": [
+        "7 security-evidence domain(s): earnings, fundamentals, historical, market/regime, price/technical, sector, valuation",
+        "capped LOW: fewer than 2 domains, or a contradiction is present",
+        "capped LOW: directional evidence conflicts",
+        "capped LOW: portfolio input missing (tax lots and acquisition dates (broker export records average cost only))",
+        "HIGH is prohibited in this release"
+      ],
+      "conflicts": [
+        "4 positive (ret_21d, price_to_ma50, rel_ret_sector_21d, last_earnings_surprise) against 1 negative (forward_pe)"
+      ],
+      "contributing": [
+        "ret_21d=+0.1236 (POSITIVE)",
+        "price_to_ma50=+0.1012 (POSITIVE)",
+        "rel_ret_sector_21d=+0.1406 (POSITIVE)",
+        "forward_pe=26.57 (NEGATIVE)",
+        "last_earnings_surprise=actual 5.75 vs estimate 1.83 (+214.2%) (POSITIVE)"
+      ],
+      "direction": "CONFLICTED",
+      "eliminations": [
+        [
+          "ADD",
+          "existing exposure suppresses it"
+        ],
+        [
+          "TRIM",
+          "no limit is breached and the security view is not negative; concentration alone does not justify reducing exposure without a supplied hard cap"
+        ],
+        [
+          "EXIT",
+          "the security view is not negative enough, and no risk limit requires full liquidation"
+        ]
+      ],
+      "horizon": "1w",
+      "rationale": "Security view is CONFLICTED: security evidence conflicts, so no change is indicated, which alone implies HOLD. Portfolio exposure did **not** change this action. The position is 11.44% of portfolio market value, 5.9x an equal weight across 52 holdings (1.92%). Equal weight is a descriptive reference, not a policy limit: no hard cap has been supplied. This suppresses ADD; it does not by itself justify TRIM. The recommendation is driven by the security view."
+    },
+    {
+      "action": "HOLD",
+      "confidence": "LOW",
+      "confidence_basis": [
+        "8 security-evidence domain(s): catalysts, earnings, fundamentals, historical, market/regime, price/technical, sector, valuation",
+        "capped LOW: fewer than 2 domains, or a contradiction is present",
+        "capped LOW: directional evidence conflicts",
+        "capped LOW: portfolio input missing (tax lots and acquisition dates (broker export records average cost only))",
+        "HIGH is prohibited in this release"
+      ],
+      "conflicts": [
+        "4 positive (ret_21d, price_to_ma50, rel_ret_sector_21d, last_earnings_surprise) against 1 negative (forward_pe)"
+      ],
+      "contributing": [
+        "ret_21d=+0.1236 (POSITIVE)",
+        "price_to_ma50=+0.1012 (POSITIVE)",
+        "rel_ret_sector_21d=+0.1406 (POSITIVE)",
+        "forward_pe=26.57 (NEGATIVE)",
+        "last_earnings_surprise=actual 5.75 vs estimate 1.83 (+214.2%) (POSITIVE)"
+      ],
+      "direction": "CONFLICTED",
+      "eliminations": [
+        [
+          "ADD",
+          "existing exposure suppresses it"
+        ],
+        [
+          "TRIM",
+          "no limit is breached and the security view is not negative; concentration alone does not justify reducing exposure without a supplied hard cap"
+        ],
+        [
+          "EXIT",
+          "the security view is not negative enough, and no risk limit requires full liquidation"
+        ]
+      ],
+      "horizon": "1m",
+      "rationale": "Security view is CONFLICTED: security evidence conflicts, so no change is indicated, which alone implies HOLD. Portfolio exposure did **not** change this action. The position is 11.44% of portfolio market value, 5.9x an equal weight across 52 holdings (1.92%). Equal weight is a descriptive reference, not a policy limit: no hard cap has been supplied. This suppresses ADD; it does not by itself justify TRIM. The recommendation is driven by the security view."
+    },
+    {
+      "action": "HOLD",
+      "confidence": "LOW",
+      "confidence_basis": [
+        "8 security-evidence domain(s): catalysts, earnings, fundamentals, historical, market/regime, price/technical, sector, valuation",
+        "capped LOW: fewer than 2 domains, or a contradiction is present",
+        "capped LOW: directional evidence conflicts",
+        "capped LOW: portfolio input missing (tax lots and acquisition dates (broker export records average cost only))",
+        "HIGH is prohibited in this release"
+      ],
+      "conflicts": [
+        "2 positive (rel_ret_sector_126d, last_earnings_surprise) against 1 negative (forward_pe)"
+      ],
+      "contributing": [
+        "rel_ret_sector_126d=+0.1617 (POSITIVE)",
+        "forward_pe=26.57 (NEGATIVE)",
+        "last_earnings_surprise=actual 5.75 vs estimate 1.83 (+214.2%) (POSITIVE)"
+      ],
+      "direction": "CONFLICTED",
+      "eliminations": [
+        [
+          "ADD",
+          "existing exposure suppresses it"
+        ],
+        [
+          "TRIM",
+          "no limit is breached and the security view is not negative; concentration alone does not justify reducing exposure without a supplied hard cap"
+        ],
+        [
+          "EXIT",
+          "the security view is not negative enough, and no risk limit requires full liquidation"
+        ]
+      ],
+      "horizon": "3m",
+      "rationale": "Security view is CONFLICTED: security evidence conflicts, so no change is indicated, which alone implies HOLD. Portfolio exposure did **not** change this action. The position is 11.44% of portfolio market value, 5.9x an equal weight across 52 holdings (1.92%). Equal weight is a descriptive reference, not a policy limit: no hard cap has been supplied. This suppresses ADD; it does not by itself justify TRIM. The recommendation is driven by the security view."
+    },
+    {
+      "action": "HOLD",
+      "confidence": "LOW",
+      "confidence_basis": [
+        "7 security-evidence domain(s): earnings, fundamentals, historical, market/regime, price/technical, sector, valuation",
+        "capped LOW: fewer than 2 domains, or a contradiction is present",
+        "capped LOW: directional evidence conflicts",
+        "capped LOW: portfolio input missing (tax lots and acquisition dates (broker export records average cost only))",
+        "HIGH is prohibited in this release"
+      ],
+      "conflicts": [
+        "2 positive (rel_ret_sector_126d, last_earnings_surprise) against 1 negative (forward_pe)"
+      ],
+      "contributing": [
+        "rel_ret_sector_126d=+0.1617 (POSITIVE)",
+        "forward_pe=26.57 (NEGATIVE)",
+        "last_earnings_surprise=actual 5.75 vs estimate 1.83 (+214.2%) (POSITIVE)"
+      ],
+      "direction": "CONFLICTED",
+      "eliminations": [
+        [
+          "ADD",
+          "existing exposure suppresses it"
+        ],
+        [
+          "TRIM",
+          "no limit is breached and the security view is not negative; concentration alone does not justify reducing exposure without a supplied hard cap"
+        ],
+        [
+          "EXIT",
+          "the security view is not negative enough, and no risk limit requires full liquidation"
+        ]
+      ],
+      "horizon": "6m",
+      "rationale": "Security view is CONFLICTED: security evidence conflicts, so no change is indicated, which alone implies HOLD. Portfolio exposure did **not** change this action. The position is 11.44% of portfolio market value, 5.9x an equal weight across 52 holdings (1.92%). Equal weight is a descriptive reference, not a policy limit: no hard cap has been supplied. This suppresses ADD; it does not by itself justify TRIM. The recommendation is driven by the security view."
+    },
+    {
+      "action": "HOLD",
+      "confidence": "LOW",
+      "confidence_basis": [
+        "6 security-evidence domain(s): earnings, fundamentals, historical, market/regime, price/technical, valuation",
+        "capped LOW: fewer than 2 domains, or a contradiction is present",
+        "capped LOW: directional evidence conflicts",
+        "capped LOW: portfolio input missing (tax lots and acquisition dates (broker export records average cost only))",
+        "HIGH is prohibited in this release"
+      ],
+      "conflicts": [
+        "1 positive (last_earnings_surprise) against 1 negative (forward_pe)"
+      ],
+      "contributing": [
+        "forward_pe=26.57 (NEGATIVE)",
+        "last_earnings_surprise=actual 5.75 vs estimate 1.83 (+214.2%) (POSITIVE)"
+      ],
+      "direction": "CONFLICTED",
+      "eliminations": [
+        [
+          "ADD",
+          "existing exposure suppresses it"
+        ],
+        [
+          "TRIM",
+          "no limit is breached and the security view is not negative; concentration alone does not justify reducing exposure without a supplied hard cap"
+        ],
+        [
+          "EXIT",
+          "the security view is not negative enough, and no risk limit requires full liquidation"
+        ]
+      ],
+      "horizon": "1y",
+      "rationale": "Security view is CONFLICTED: security evidence conflicts, so no change is indicated, which alone implies HOLD. Portfolio exposure did **not** change this action. The position is 11.44% of portfolio market value, 5.9x an equal weight across 52 holdings (1.92%). Equal weight is a descriptive reference, not a policy limit: no hard cap has been supplied. This suppresses ADD; it does not by itself justify TRIM. The recommendation is driven by the security view."
+    }
+  ]
+}
