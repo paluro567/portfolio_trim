@@ -15,6 +15,7 @@ from mip.core.db import session_scope
 from mip.product.contracts import Status
 from mip.product.decide import decide
 from mip.product.policy import DEFAULT_POLICY_PATH, PolicyArtifact, load_policy
+from mip.product.portfolio_view import render_portfolio, summarise
 from mip.product.render import render
 from mip.product.slice import evaluate_constraints, gather_evidence, load_position
 
@@ -105,3 +106,77 @@ def report(
         typer.echo(
             f"  {v.horizon:>3}  {v.action.value:<8} {v.direction.value:<11} {v.confidence.value}"
         )
+
+
+@app.command("portfolio")
+def portfolio(
+    as_of: str = typer.Option(..., "--as-of", help="ISO date"),
+    balances: Path = typer.Option(DEFAULT_BALANCES, "--balances"),
+    out_dir: Path = typer.Option(Path("data/product_reports"), "--out-dir"),
+    policy_path: Path = typer.Option(DEFAULT_POLICY_PATH, "--policy"),
+) -> None:
+    """Evaluate EVERY holding and build the portfolio command centre."""
+    import csv as _csv
+
+    try:
+        as_of_d = date.fromisoformat(as_of)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    symbols = [r["symbol"].strip().upper() for r in _csv.DictReader(balances.open())]
+    commit = (
+        subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True
+        ).stdout.strip()
+        or "unknown"
+    )
+
+    factory = open_session_factory()
+    rows = []
+    latest_price = None
+    stamp = out_dir / as_of_d.isoformat()
+    with session_scope(factory) as session:
+        policy = load_policy(policy_path)
+        for sym in symbols:
+            try:
+                pos = load_position(session, sym, as_of_d, balances)
+                evidence = gather_evidence(session, sym, as_of_d)
+                constraints = evaluate_constraints(pos, policy)
+                verdicts = decide(evidence, constraints, pos)
+            except Exception as exc:  # noqa: BLE001 - one bad holding must not stop the run
+                typer.echo(f"  {sym}: SKIPPED ({type(exc).__name__}: {exc})")
+                continue
+            stale = (as_of_d - pos.price_date).days if pos.price_date else None
+            if pos.price_date and (latest_price is None or pos.price_date > latest_price):
+                latest_price = pos.price_date
+            rows.append(summarise(sym, pos, evidence, verdicts, stale))
+
+            dates = [e.as_of for e in evidence if e.as_of and e.domain != "catalysts"]
+            meta = {
+                "commit": commit,
+                "feature_date": max(dates).isoformat() if dates else "unavailable",
+                "generated_at": datetime.now(UTC).isoformat(),
+                "balances_sha256": hashlib.sha256(balances.read_bytes()).hexdigest(),
+                "balances_path": str(balances),
+                "policy": policy.to_dict(),
+            }
+            d = stamp / sym
+            d.mkdir(parents=True, exist_ok=True)
+            (d / f"{sym}_{as_of_d.isoformat()}.md").write_text(
+                render(pos, evidence, constraints, verdicts, meta)
+            )
+
+    stamp.mkdir(parents=True, exist_ok=True)
+    summary = stamp / "PORTFOLIO.md"
+    summary.write_text(
+        render_portfolio(
+            rows,
+            {
+                "as_of": as_of_d.isoformat(),
+                "commit": commit,
+                "latest_price": latest_price.isoformat() if latest_price else "unavailable",
+            },
+        )
+    )
+    typer.echo(f"holdings evaluated: {len(rows)}")
+    typer.echo(f"portfolio summary : {summary}")
+    typer.echo(f"individual reports: {stamp}/<TICKER>/")

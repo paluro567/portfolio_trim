@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import statistics
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -170,17 +171,27 @@ def gather_evidence(session, symbol: str, as_of: date) -> list[Evidence]:
 
     # -- price / technical (DESCRIPTIVE facts; direction is EXPERIMENTAL reading)
     tech = [
-        ("ret_21d", "21-session total return", ("1w", "1m")),
-        ("ret_63d", "63-session total return", ("1m", "3m")),
-        ("ret_126d", "126-session total return", ("3m", "6m")),
-        ("ret_252d", "252-session total return", ("6m", "1y")),
-        ("vol_21d", "21-session annualised volatility", ALL_H),
-        ("dist_52w_high", "distance below the 52-week high", ALL_H),
-        ("price_to_ma50", "price relative to the 50-session average", ("1w", "1m")),
-        ("price_to_ma200", "price relative to the 200-session average", ("3m", "6m", "1y")),
-        ("rel_ret_spy_63d", "63-session return relative to SPY", ("1m", "3m")),
+        ("ret_21d", "21-session total return", ("1w", "1m"), "absolute_momentum"),
+        ("ret_63d", "63-session total return", ("1m", "3m"), "absolute_momentum"),
+        ("ret_126d", "126-session total return", ("3m", "6m"), "absolute_momentum"),
+        ("ret_252d", "252-session total return", ("6m", "1y"), "absolute_momentum"),
+        ("vol_21d", "21-session annualised volatility", ALL_H, "volatility"),
+        ("dist_52w_high", "distance below the 52-week high", ALL_H, "trend_position"),
+        (
+            "price_to_ma50",
+            "price relative to the 50-session average",
+            ("1w", "1m"),
+            "trend_position",
+        ),
+        (
+            "price_to_ma200",
+            "price relative to the 200-session average",
+            ("3m", "6m", "1y"),
+            "trend_position",
+        ),
+        ("rel_ret_spy_63d", "63-session return relative to SPY", ("1m", "3m"), "market_relative"),
     ]
-    for name, desc, hz in tech:
+    for name, desc, hz, grp in tech:
         row = _feat(session, symbol, name, as_of)
         if row is None:
             ev.append(
@@ -218,9 +229,14 @@ def gather_evidence(session, symbol: str, as_of: date) -> list[Evidence]:
                 fdate,
                 hz,
                 f"{desc}{pctxt}",
-                "A measured price fact. Its directional reading is EXPERIMENTAL: no "
-                "predictive reliability has been established for this feature.",
+                "A measured price fact. The directional reading applies a MOMENTUM "
+                "interpretation (recent strength read as positive). The opposite "
+                "MEAN-REVERSION interpretation is equally defensible and would invert "
+                "the sign. No predictive reliability has been established for either. "
+                "EXPERIMENTAL.",
                 direction=direction,
+                group=grp,
+                ambiguous=direction is not Direction.NEUTRAL,
             )
         )
 
@@ -317,7 +333,7 @@ def gather_evidence(session, symbol: str, as_of: date) -> list[Evidence]:
 
     # -- historical forward-return distribution, own history, strictly PIT
     ev.extend(_historical(session, symbol, as_of))
-    return ev
+    return _assign_groups(ev)
 
 
 def _historical(session, symbol: str, as_of: date) -> list[Evidence]:
@@ -545,7 +561,7 @@ def _fundamentals(session, symbol: str, as_of: date) -> list[Evidence]:
     fdate, tpe, fpe, pb, margin, de, beta, mcap, rev = row
     out: list[Evidence] = []
 
-    def add(name, dom, val, expl, direction=Direction.NEUTRAL):
+    def add(name, dom, val, expl, direction=Direction.NEUTRAL, grp="company_quality"):
         out.append(
             Evidence(
                 name,
@@ -560,6 +576,7 @@ def _fundamentals(session, symbol: str, as_of: date) -> list[Evidence]:
                 "no trend or historical percentile can be computed. Directional "
                 "reading is EXPERIMENTAL.",
                 direction=direction,
+                group=grp,
             )
         )
 
@@ -584,25 +601,40 @@ def _fundamentals(session, symbol: str, as_of: date) -> list[Evidence]:
     if rev is not None:
         add("revenue_ttm", "fundamentals", f"${float(rev) / 1e9:,.1f}B", "trailing revenue")
     if tpe is not None:
-        add("trailing_pe", "valuation", f"{float(tpe):.2f}", "trailing price/earnings")
-    if fpe is not None and tpe is not None:
-        cheaper = float(fpe) < float(tpe)
+        add(
+            "trailing_pe",
+            "valuation",
+            f"{float(tpe):.2f}",
+            "trailing price/earnings",
+            grp="valuation_level",
+        )
+    if fpe is not None:
+        note = "forward price/earnings"
+        if tpe is not None:
+            rel = "below" if float(fpe) < float(tpe) else "above"
+            note += (
+                f"; {rel} the trailing multiple. This comparison is deliberately NOT "
+                "read directionally. Trailing and forward EPS rest on different bases "
+                "(realised vs consensus, commonly GAAP vs adjusted), and a one-off item "
+                "in the trailing period moves the ratio without implying anything about "
+                "future earnings. The raw values are reported; the inference is withheld."
+            )
         add(
             "forward_pe",
             "valuation",
             f"{float(fpe):.2f}",
-            "forward price/earnings; "
-            + (
-                "below the trailing multiple, implying expected earnings growth"
-                if cheaper
-                else "above the trailing multiple, implying expected earnings decline"
-            ),
-            Direction.POSITIVE if cheaper else Direction.NEGATIVE,
+            note,
+            direction=Direction.NEUTRAL,
+            grp="valuation_level",
         )
-    elif fpe is not None:
-        add("forward_pe", "valuation", f"{float(fpe):.2f}", "forward price/earnings")
     if pb is not None:
-        add("price_to_book", "valuation", f"{float(pb):.2f}", "price to book value")
+        add(
+            "price_to_book",
+            "valuation",
+            f"{float(pb):.2f}",
+            "price to book value",
+            grp="valuation_level",
+        )
     return out
 
 
@@ -715,4 +747,29 @@ def _earnings(session, symbol: str, as_of: date) -> list[Evidence]:
                 missing_reason="earnings_observations has no eps_actual before as_of",
             )
         )
+    return out
+
+
+# Each domain maps to the PHENOMENON it measures, so that independence is never
+# over-counted (several momentum windows are one phenomenon) and never
+# under-counted (sector momentum, regime and earnings are not the same thing).
+DOMAIN_GROUP = {
+    "sector": "sector_relative",
+    "market/regime": "market_regime",
+    "catalysts": "event_risk",
+    "earnings": "earnings_delivery",
+    "historical": "own_history",
+    "fundamentals": "company_quality",
+    "valuation": "valuation_level",
+}
+
+
+def _assign_groups(ev: list[Evidence]) -> list[Evidence]:
+    """Fill in any group left at the default from its domain."""
+    out: list[Evidence] = []
+    for e in ev:
+        if e.group == "other" and e.domain in DOMAIN_GROUP:
+            out.append(replace(e, group=DOMAIN_GROUP[e.domain]))
+        else:
+            out.append(e)
     return out

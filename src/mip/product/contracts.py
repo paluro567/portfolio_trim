@@ -59,6 +59,13 @@ class ConstraintStatus(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Evidence:
+    """One observation.
+
+    `domain` is where it came from. `group` is the underlying PHENOMENON it
+    measures. Several items may share a group (four momentum windows are one
+    phenomenon, not four). Independence is counted by group, never by item.
+    """
+
     name: str
     domain: str
     status: Status
@@ -70,12 +77,16 @@ class Evidence:
     limitations: str
     missing_reason: str | None = None
     direction: Direction = Direction.NEUTRAL
+    group: str = "other"
+    ambiguous: bool = False
 
     def to_dict(self) -> dict:
         return {
             "as_of": self.as_of.isoformat() if self.as_of else None,
             "direction": self.direction.value,
+            "ambiguous": self.ambiguous,
             "domain": self.domain,
+            "group": self.group,
             "explanation": self.explanation,
             "horizons": list(self.horizons),
             "limitations": self.limitations,

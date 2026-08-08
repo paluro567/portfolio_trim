@@ -575,9 +575,9 @@
   "meta": {
     "balances_path": "data/peter_real_opening_balances_2026-07-16.csv",
     "balances_sha256": "5f040ce30a401570b54778fed52a99379f676a33c41cb058d2393c7a215c0adc",
-    "commit": "7faa118",
+    "commit": "6c810bb",
     "feature_date": "2026-08-07",
-    "generated_at": "2026-08-08T01:54:52.714445+00:00",
+    "generated_at": "2026-08-08T01:57:17.669054+00:00",
     "policy": {
       "missing": [
         "hard_cap_pct",

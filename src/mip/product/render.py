@@ -56,6 +56,34 @@ def render(
         f"predictive reliability has been established for any signal used here."
     )
 
+    add("\n## 1b. Data freshness\n")
+    add("| Field | Value |")
+    add("| --- | --- |")
+    add(f"| AS-OF DATE | {pos.as_of.isoformat()} |")
+    add(f"| LATEST SECURITY PRICE | {pos.price_date or 'unavailable'} |")
+    add(f"| LATEST FEATURE / OBSERVED DATA | {meta.get('feature_date', 'unavailable')} |")
+    _age = (pos.as_of - pos.price_date).days if pos.price_date else None
+    add(f"| DATA AGE | {'unavailable' if _age is None else f'{_age} calendar day(s)'} |")
+    _fresh = (
+        "UNKNOWN"
+        if _age is None
+        else (
+            "CURRENT"
+            if _age <= 1
+            else (
+                "STALE - 1W reading is weakened"
+                if _age <= 4
+                else "BLOCKING - 1W evidence is too old to support a 1-week view"
+            )
+        )
+    )
+    add(f"| FRESHNESS STATUS | **{_fresh}** |")
+    if _age is not None and _age > 4:
+        add(
+            "\n> **1W caution.** The latest price is more than four calendar days old. "
+            "Treat the 1-week row as unsupported until prices are refreshed."
+        )
+
     # 2 executive summary
     add(_sec(2, "Executive summary"))
     acts = {v.action for v in verdicts}
@@ -129,6 +157,14 @@ def render(
     add(sizing.split(".", 1)[-1].strip() if "." in sizing else sizing.strip())
 
     pol = meta.get("policy") or {}
+    if any(v.action.value == "ADD" for v in verdicts):
+        add(
+            "\n> **ADD is not directly actionable.** The holdings file records positions "
+            "only; it carries no cash balance, so available capital is unknown. Read ADD "
+            "as *the security evidence would support increasing exposure*, not as an "
+            "instruction that funds exist to do so."
+        )
+
     add("\n**Portfolio policy**\n")
     if pol.get("status") == "SUPPLIED":
         add(

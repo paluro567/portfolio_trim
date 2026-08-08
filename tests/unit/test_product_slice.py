@@ -8,6 +8,7 @@ scores. No network, no database.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -114,10 +115,14 @@ def test_directional_view_neutral_when_no_signed_evidence():
 
 
 def test_directional_view_conflicted_surfaces_both_sides():
-    ev = [_ev("a", "price/technical", Direction.POSITIVE), _ev("b", "sector", Direction.NEGATIVE)]
+    ev = [
+        replace(_ev("a", "price/technical", Direction.POSITIVE), group="absolute_momentum"),
+        replace(_ev("b", "sector", Direction.NEGATIVE), group="sector_relative"),
+    ]
     direction, contributing, conflicts = directional_view(ev, "1m")
     assert direction is Direction.CONFLICTED
-    assert conflicts and len(contributing) == 2  # conflicts remain visible
+    assert conflicts  # conflicts remain visible
+    assert len(contributing) == 2  # one detail line per phenomenon group
 
 
 def test_directional_view_agrees():
@@ -151,7 +156,10 @@ def test_confidence_capped_low_by_missing_portfolio_input():
 
 
 def test_confidence_capped_low_because_all_readings_experimental():
-    ev = [_ev("a", "price/technical"), _ev("b", "sector")]
+    ev = [
+        replace(_ev("a", "price/technical"), group="absolute_momentum"),
+        replace(_ev("b", "sector"), group="sector_relative"),
+    ]
     c, basis = confidence_for(ev, "1m", Direction.NEUTRAL, [], _pos())
     assert c is Confidence.LOW
     assert any("EXPERIMENTAL" in b for b in basis)
@@ -334,3 +342,53 @@ def test_archived_provenance_bundle_is_complete():
         e["status"] in {"VALIDATED", "DESCRIPTIVE", "EXPERIMENTAL", "UNAVAILABLE"}
         for e in b["evidence"]
     )
+
+
+# -- group independence and evidence semantics (production loop hardening) -----
+def test_correlated_items_count_as_one_group():
+    """Four momentum windows agreeing is ONE phenomenon, not four."""
+    ev = [_ev(f"ret_{n}d", "price/technical", Direction.POSITIVE) for n in (21, 63, 126, 252)]
+    ev = [replace(e, group="absolute_momentum") for e in ev]
+    direction, detail, conflicts = directional_view(ev, "1m")
+    assert direction is Direction.POSITIVE
+    assert len([d for d in detail if d.startswith("[")]) == 1  # one group vote
+
+
+def test_two_distinct_groups_disagreeing_is_conflicted():
+    ev = [
+        replace(_ev("a", "price/technical", Direction.POSITIVE), group="absolute_momentum"),
+        replace(_ev("b", "sector", Direction.NEGATIVE), group="sector_relative"),
+    ]
+    assert directional_view(ev, "1m")[0] is Direction.CONFLICTED
+
+
+def test_duplicating_evidence_does_not_strengthen_confidence():
+    one = [replace(_ev("a", "price/technical", Direction.POSITIVE), group="absolute_momentum")]
+    many = one + [
+        replace(_ev(f"a{i}", "price/technical", Direction.POSITIVE), group="absolute_momentum")
+        for i in range(5)
+    ]
+    c1, _ = confidence_for(one, "1m", Direction.POSITIVE, [], _pos())
+    c2, _ = confidence_for(many, "1m", Direction.POSITIVE, [], _pos())
+    assert c1 is c2
+
+
+def test_unavailable_evidence_never_becomes_neutral():
+    ev = [replace(_ev("a", "price/technical"), status=Status.UNAVAILABLE)]
+    assert directional_view(ev, "1m")[0] is Direction.UNAVAILABLE
+
+
+def test_evidence_groups_have_no_default_bucket():
+    """Every domain must map to a named phenomenon; 'other' is a defect."""
+    from mip.product.slice import DOMAIN_GROUP
+
+    for dom in (
+        "sector",
+        "market/regime",
+        "catalysts",
+        "earnings",
+        "historical",
+        "fundamentals",
+        "valuation",
+    ):
+        assert dom in DOMAIN_GROUP and DOMAIN_GROUP[dom] != "other"

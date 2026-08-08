@@ -49,7 +49,12 @@ ADD_DISCOURAGE_MULTIPLE = Decimal(3)
 def directional_view(
     evidence: list[Evidence], horizon: str
 ) -> tuple[Direction, list[str], list[str]]:
-    """Stage 1. Security evidence only."""
+    """Stage 1. Security evidence only, aggregated by PHENOMENON GROUP.
+
+    Four momentum windows agreeing is ONE piece of evidence about momentum, not
+    four. Each group casts a single vote: the majority direction of its members,
+    or NEUTRAL when its members disagree.
+    """
     rel = [
         e
         for e in evidence
@@ -57,21 +62,51 @@ def directional_view(
         and e.status is not Status.UNAVAILABLE
         and e.domain in SECURITY_DOMAINS
     ]
-    signed = [e for e in rel if e.direction in (Direction.POSITIVE, Direction.NEGATIVE)]
     if not rel:
         return Direction.UNAVAILABLE, [], []
+
+    groups: dict[str, list[Evidence]] = {}
+    for e in rel:
+        groups.setdefault(e.group, []).append(e)
+
+    votes: dict[str, Direction] = {}
+    detail: list[str] = []
+    for g, items in sorted(groups.items()):
+        pos = [e for e in items if e.direction is Direction.POSITIVE]
+        neg = [e for e in items if e.direction is Direction.NEGATIVE]
+        if len(pos) > len(neg):
+            votes[g] = Direction.POSITIVE
+        elif len(neg) > len(pos):
+            votes[g] = Direction.NEGATIVE
+        else:
+            votes[g] = Direction.NEUTRAL
+        members = ", ".join(f"{e.name}={e.value}" for e in items)
+        detail.append(f"[{g} -> {votes[g].value}] {members}")
+
+    signed = {g: d for g, d in votes.items() if d is not Direction.NEUTRAL}
     if not signed:
-        return Direction.NEUTRAL, [f"{e.name}={e.value}" for e in rel[:5]], []
-    pos = [e for e in signed if e.direction is Direction.POSITIVE]
-    neg = [e for e in signed if e.direction is Direction.NEGATIVE]
-    contributing = [f"{e.name}={e.value} ({e.direction.value})" for e in signed]
-    if pos and neg:
+        return Direction.NEUTRAL, detail, []
+    pos_g = sorted(g for g, d in signed.items() if d is Direction.POSITIVE)
+    neg_g = sorted(g for g, d in signed.items() if d is Direction.NEGATIVE)
+    if pos_g and neg_g:
         conflict = (
-            f"{len(pos)} positive ({', '.join(e.name for e in pos)}) against "
-            f"{len(neg)} negative ({', '.join(e.name for e in neg)})"
+            f"{len(pos_g)} positive group(s) ({', '.join(pos_g)}) against "
+            f"{len(neg_g)} negative group(s) ({', '.join(neg_g)})"
         )
-        return Direction.CONFLICTED, contributing, [conflict]
-    return (Direction.POSITIVE if pos else Direction.NEGATIVE), contributing, []
+        return Direction.CONFLICTED, detail, [conflict]
+    return (Direction.POSITIVE if pos_g else Direction.NEGATIVE), detail, []
+
+
+def independent_groups(evidence: list[Evidence], horizon: str) -> list[str]:
+    return sorted(
+        {
+            e.group
+            for e in evidence
+            if horizon in e.horizons
+            and e.status is not Status.UNAVAILABLE
+            and e.domain in SECURITY_DOMAINS
+        }
+    )
 
 
 def _baseline_action(direction: Direction, n_signed: int) -> tuple[Action, str]:
@@ -108,15 +143,18 @@ def confidence_for(
         and e.status is not Status.UNAVAILABLE
         and e.domain in SECURITY_DOMAINS
     ]
-    domains = sorted({e.domain for e in rel})
-    basis.append(f"{len(domains)} security-evidence domain(s): {', '.join(domains)}")
+    groups = sorted({e.group for e in rel})
+    basis.append(
+        f"{len(groups)} independent phenomenon group(s): {', '.join(groups)} "
+        f"(from {len(rel)} raw items - correlated items are counted once)"
+    )
 
     cap = Confidence.MODERATE
-    if len(domains) >= 2 and not conflicts:
-        basis.append("MODERATE permitted: >=2 independent domains, no contradiction")
+    if len(groups) >= 2 and not conflicts:
+        basis.append("MODERATE permitted: >=2 independent groups, no contradiction")
     else:
         cap = Confidence.LOW
-        basis.append("capped LOW: fewer than 2 domains, or a contradiction is present")
+        basis.append("capped LOW: fewer than 2 groups, or a contradiction is present")
     if conflicts:
         cap = Confidence.LOW
         basis.append("capped LOW: directional evidence conflicts")
