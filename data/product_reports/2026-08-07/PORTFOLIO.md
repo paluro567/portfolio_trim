@@ -1,6 +1,6 @@
 # Portfolio Command Centre
 
-*As of 2026-08-07. 52 holdings. Prices through 2026-08-07. Generated at commit `6c810bb`.*
+*As of 2026-08-07. 52 holdings. Prices through 2026-08-07. Generated at commit `55504cf`.*
 
 > Column **View** is the security assessment. Column **Action** is the portfolio decision. They are computed separately: portfolio weight cannot reach the view. Evidence strength is an experimental evidence-quality label, not a probability.
 

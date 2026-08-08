@@ -199,10 +199,8 @@ def render_portfolio(rows: list[HoldingRow], meta: dict) -> str:
 
     add("\n## Evidence detail per holding\n")
     add(
-        add(
-            "| Ticker | Weight | 1W | 1M | 3M | 6M | 1Y | View (1M) "
-            "| Strength | Groups | Fresh |"
-        )
+        "| Ticker | Strongest positive | Strongest negative | Sizing effect "
+        "| Next earnings | Evidence |"
     )
     add("| --- | --- | --- | --- | --- | ---: |")
     for r in sorted(rows, key=lambda x: -(x.weight or 0)):
