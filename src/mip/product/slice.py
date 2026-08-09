@@ -26,6 +26,7 @@ from mip.product.contracts import (
     PositionState,
     Status,
 )
+from mip.product.valuation import assess as assess_valuation
 
 ALL_H = tuple(h for h, _ in HORIZONS)
 
@@ -331,6 +332,9 @@ def gather_evidence(session, symbol: str, as_of: date) -> list[Evidence]:
     # -- earnings and catalysts (dated events, PIT)
     ev.extend(_earnings(session, symbol, as_of))
 
+    # -- valuation: ONE contextual voice, components exposed but not voting
+    ev.append(_valuation_evidence(session, symbol, as_of))
+
     # -- historical forward-return distribution, own history, strictly PIT
     ev.extend(_historical(session, symbol, as_of))
     return _assign_groups(ev)
@@ -600,41 +604,6 @@ def _fundamentals(session, symbol: str, as_of: date) -> list[Evidence]:
         add("market_cap", "fundamentals", f"${float(mcap) / 1e9:,.1f}B", "market capitalisation")
     if rev is not None:
         add("revenue_ttm", "fundamentals", f"${float(rev) / 1e9:,.1f}B", "trailing revenue")
-    if tpe is not None:
-        add(
-            "trailing_pe",
-            "valuation",
-            f"{float(tpe):.2f}",
-            "trailing price/earnings",
-            grp="valuation_level",
-        )
-    if fpe is not None:
-        note = "forward price/earnings"
-        if tpe is not None:
-            rel = "below" if float(fpe) < float(tpe) else "above"
-            note += (
-                f"; {rel} the trailing multiple. This comparison is deliberately NOT "
-                "read directionally. Trailing and forward EPS rest on different bases "
-                "(realised vs consensus, commonly GAAP vs adjusted), and a one-off item "
-                "in the trailing period moves the ratio without implying anything about "
-                "future earnings. The raw values are reported; the inference is withheld."
-            )
-        add(
-            "forward_pe",
-            "valuation",
-            f"{float(fpe):.2f}",
-            note,
-            direction=Direction.NEUTRAL,
-            grp="valuation_level",
-        )
-    if pb is not None:
-        add(
-            "price_to_book",
-            "valuation",
-            f"{float(pb):.2f}",
-            "price to book value",
-            grp="valuation_level",
-        )
     return out
 
 
@@ -773,3 +742,56 @@ def _assign_groups(ev: list[Evidence]) -> list[Evidence]:
         else:
             out.append(e)
     return out
+
+
+# Valuation is a level, not a timing signal. It is admitted only to the horizons
+# over which a re-rating could plausibly play out. No weights are invented; the
+# item simply does not appear at 1w/1m/3m.
+VALUATION_HORIZONS = ("6m", "1y")
+
+
+def _valuation_evidence(session, symbol: str, as_of: date) -> Evidence:
+    a = assess_valuation(session, symbol, as_of)
+    if a.status == "UNAVAILABLE":
+        return Evidence(
+            "valuation_position",
+            "valuation",
+            Status.UNAVAILABLE,
+            "-",
+            "company_fundamentals",
+            a.as_of,
+            VALUATION_HORIZONS,
+            "contextual valuation position",
+            a.reason,
+            missing_reason=a.reason,
+            group="valuation_level",
+        )
+    comps = "; ".join(
+        f"{m} {float(v):.2f} -> {float(p):.0%} of {n} peers" for m, v, p, n in a.components
+    )
+    direction = (
+        Direction.POSITIVE
+        if a.status in ("CHEAP", "BELOW NORMAL")
+        else Direction.NEGATIVE if a.status in ("EXPENSIVE", "ABOVE NORMAL") else Direction.NEUTRAL
+    )
+    return Evidence(
+        "valuation_position",
+        "valuation",
+        Status.DESCRIPTIVE,
+        f"{a.status} ({float(a.composite_percentile):.0%} of reference set)",
+        "company_fundamentals",
+        a.as_of,
+        VALUATION_HORIZONS,
+        f"Reference: {a.reference}; {a.peer_count} peers. Components: {comps}. "
+        f"The composite is the mean of the component percentiles.",
+        "The percentile is a rank within a peer set, NOT a probability. A demanding "
+        "multiple is not a forecast of decline and a cheap one is not a forecast of "
+        "gain: a high-quality or fast-growing business may rationally trade at a "
+        "premium, and a deteriorating one may rationally trade cheaply. This item "
+        "answers only 'how demanding is the price relative to comparable companies "
+        "today'. The directional reading is EXPERIMENTAL. Single vendor snapshot: no "
+        "valuation history exists, so the security cannot be compared with its own past.",
+        direction=direction,
+        group="valuation_level",
+        ambiguous=True,
+    )
