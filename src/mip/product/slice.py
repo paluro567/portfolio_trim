@@ -26,6 +26,7 @@ from mip.product.contracts import (
     PositionState,
     Status,
 )
+from mip.product.delivery import assess as assess_delivery
 from mip.product.event import classify as classify_event
 from mip.product.event import magnitude as event_magnitude
 from mip.product.event import next_event
@@ -698,54 +699,7 @@ def _earnings(session, symbol: str, as_of: date) -> list[Evidence]:
             )
         )
 
-    prev = session.execute(
-        text(
-            "select e.earnings_date, e.eps_estimate, e.eps_actual from earnings_observations e "
-            "join instruments i on i.id=e.instrument_id where i.symbol=:s "
-            "and e.observed_at::date<=:d and e.earnings_date<:d and e.eps_actual is not null "
-            "order by e.earnings_date desc limit 1"
-        ),
-        {"s": symbol, "d": as_of},
-    ).first()
-    if prev is not None:
-        pdate, pest, pact = prev
-        if pest is not None and pact is not None:
-            surprise = float(pact) - float(pest)
-            pct = surprise / abs(float(pest)) if float(pest) else 0.0
-            out.append(
-                Evidence(
-                    "last_earnings_surprise",
-                    "earnings",
-                    Status.DESCRIPTIVE,
-                    f"actual {float(pact):.2f} vs estimate {float(pest):.2f} " f"({pct:+.1%})",
-                    "earnings_observations",
-                    pdate,
-                    ALL_H,
-                    f"Most recent reported quarter ({pdate.isoformat()}).",
-                    "One observation. Not a pattern, and no predictive reliability "
-                    "has been established. Directional reading is EXPERIMENTAL.",
-                    direction=(
-                        Direction.POSITIVE
-                        if surprise > 0
-                        else Direction.NEGATIVE if surprise < 0 else Direction.NEUTRAL
-                    ),
-                )
-            )
-    else:
-        out.append(
-            Evidence(
-                "last_earnings_surprise",
-                "earnings",
-                Status.UNAVAILABLE,
-                "-",
-                "earnings_observations",
-                None,
-                ALL_H,
-                "last reported EPS vs estimate",
-                "no completed report with both estimate and actual",
-                missing_reason="earnings_observations has no eps_actual before as_of",
-            )
-        )
+    out.append(_delivery_evidence(session, symbol, as_of))
     return out
 
 
@@ -823,5 +777,59 @@ def _valuation_evidence(session, symbol: str, as_of: date) -> Evidence:
         "valuation history exists, so the security cannot be compared with its own past.",
         direction=direction,
         group="valuation_level",
+        ambiguous=True,
+    )
+
+
+# A quarterly delivery record summarises ~2 years of outcomes. Claiming it informs
+# the next five sessions would require a link this repository cannot demonstrate,
+# so 1w is deliberately excluded. No horizon weights are invented.
+DELIVERY_HORIZONS = ("1m", "3m", "6m", "1y")
+
+
+def _delivery_evidence(session, symbol: str, as_of: date) -> Evidence:
+    r = assess_delivery(session, symbol, as_of)
+    if r.state == "UNAVAILABLE":
+        return Evidence(
+            "earnings_delivery_record",
+            "earnings",
+            Status.UNAVAILABLE,
+            "-",
+            "earnings_observations",
+            r.last_report,
+            DELIVERY_HORIZONS,
+            "multi-report earnings delivery record",
+            r.reason,
+            missing_reason=r.reason,
+            group="earnings_delivery",
+        )
+    direction = (
+        Direction.POSITIVE
+        if r.state == "CONSISTENT_BEATS"
+        else Direction.NEGATIVE if r.state == "CONSISTENT_MISSES" else Direction.NEUTRAL
+    )
+    return Evidence(
+        "earnings_delivery_record",
+        "earnings",
+        Status.DESCRIPTIVE,
+        f"{r.state} ({r.beats}/{r.n_reports} beats, median miss/beat "
+        f"${r.median_abs_dollar_surprise:.2f})",
+        "earnings_observations",
+        r.last_report,
+        DELIVERY_HORIZONS,
+        f"Delivery against contemporaneous consensus: {r.reason}. Magnitude is "
+        f"reported in EPS dollars, not percent.",
+        "Sign only. PERCENTAGE surprise is deliberately not used: it divides by the "
+        "estimate, and these estimates are frequently near zero, so a $1.00 miss "
+        "against a $0.02 estimate reads as -5000% - a denominator artifact, not a "
+        "catastrophe. BASE-RATE CAVEAT: 30 of the 45 holdings with a record beat "
+        "consistently, so CONSISTENT_BEATS is the norm and discriminates weakly; "
+        "CONSISTENT_MISSES is the genuinely unusual state. This describes EXECUTION, "
+        "not expected return: whether a habitual beater subsequently outperforms has "
+        "NOT been measured here, and the earnings schedule was captured in a single "
+        "ingest, so a point-in-time backtest of that link is not possible from this "
+        "data. EXPERIMENTAL.",
+        direction=direction,
+        group="earnings_delivery",
         ambiguous=True,
     )
