@@ -26,6 +26,9 @@ from mip.product.contracts import (
     PositionState,
     Status,
 )
+from mip.product.event import classify as classify_event
+from mip.product.event import magnitude as event_magnitude
+from mip.product.event import next_event
 from mip.product.valuation import assess as assess_valuation
 
 ALL_H = tuple(h for h, _ in HORIZONS)
@@ -609,15 +612,92 @@ def _fundamentals(session, symbol: str, as_of: date) -> list[Evidence]:
 
 def _earnings(session, symbol: str, as_of: date) -> list[Evidence]:
     """Dated earnings events. Strictly PIT: observed_at <= as_of."""
-    nxt = session.execute(
-        text(
-            "select e.earnings_date, e.is_confirmed, e.eps_estimate from earnings_observations e "
-            "join instruments i on i.id=e.instrument_id where i.symbol=:s "
-            "and e.observed_at::date<=:d and e.earnings_date>=:d "
-            "order by e.earnings_date asc limit 1"
-        ),
-        {"s": symbol, "d": as_of},
-    ).first()
+    ed, confirmed, any_hist = next_event(session, symbol, as_of)
+    out: list[Evidence] = []
+
+    # One item per horizon: an event 83 days out is OUTSIDE a 1-month window.
+    for hz in ALL_H:
+        st = classify_event(ed, as_of, hz, any_hist)
+        if st.status == "UNAVAILABLE":
+            out.append(
+                Evidence(
+                    f"event_state_{hz}",
+                    "catalysts",
+                    Status.UNAVAILABLE,
+                    "-",
+                    "earnings_observations",
+                    None,
+                    (hz,),
+                    "scheduled-event state for this horizon",
+                    st.reason,
+                    missing_reason=st.reason,
+                    group="event_risk",
+                )
+            )
+            continue
+        val = st.status
+        if st.days_to_event is not None:
+            val += f" ({st.days_to_event}d, {st.event_date.isoformat()})"
+        out.append(
+            Evidence(
+                f"event_state_{hz}",
+                "catalysts",
+                Status.DESCRIPTIVE,
+                val,
+                "earnings_observations",
+                st.event_date,
+                (hz,),
+                f"Scheduled-event state for the {hz} horizon: {st.reason}.",
+                "A date is not a direction. This item states only whether an "
+                "unresolved scheduled event falls inside the horizon and how close "
+                "it is. It carries NO expectation of which way the result will go, "
+                "and it never contributes to the directional view. It reaches the "
+                "recommendation only as a position-management guardrail.",
+                direction=Direction.NEUTRAL,
+                group="event_risk",
+            )
+        )
+
+    mag = event_magnitude(session, symbol, as_of)
+    if mag.median_abs_move is None:
+        out.append(
+            Evidence(
+                "event_move_magnitude",
+                "catalysts",
+                Status.UNAVAILABLE,
+                "-",
+                "earnings_observations + daily_prices",
+                None,
+                ALL_H,
+                "historical size of moves around past reports",
+                mag.reason,
+                missing_reason=mag.reason,
+                group="event_risk",
+            )
+        )
+    else:
+        out.append(
+            Evidence(
+                "event_move_magnitude",
+                "catalysts",
+                Status.DESCRIPTIVE,
+                f"median |move| {mag.median_abs_move:.1%}, p90 {mag.p90_abs_move:.1%}, "
+                f"worst {mag.worst_down:+.1%}, best {mag.best_up:+.1%}, n={mag.n_events}",
+                "earnings_observations + daily_prices",
+                as_of,
+                ALL_H,
+                f"Close-to-close move on the {mag.reason}.",
+                "DISPERSION ONLY. This measures how large past reactions were, not "
+                "which way the next one goes. The upside and downside extremes are "
+                "shown together precisely so the figure cannot be read directionally. "
+                "The schedule was observed in a single ingest, so these dates are "
+                "usable for describing the present but would be lookahead-contaminated "
+                "in a historical backtest. EXPERIMENTAL.",
+                direction=Direction.NEUTRAL,
+                group="event_risk",
+            )
+        )
+
     prev = session.execute(
         text(
             "select e.earnings_date, e.eps_estimate, e.eps_actual from earnings_observations e "
@@ -627,56 +707,6 @@ def _earnings(session, symbol: str, as_of: date) -> list[Evidence]:
         ),
         {"s": symbol, "d": as_of},
     ).first()
-    out: list[Evidence] = []
-    if nxt is None:
-        out.append(
-            Evidence(
-                "next_earnings_date",
-                "catalysts",
-                Status.UNAVAILABLE,
-                "-",
-                "earnings_observations",
-                None,
-                ALL_H,
-                "next scheduled earnings date",
-                "no future dated event observed at or before as_of",
-                missing_reason="no earnings_observations row with earnings_date >= as_of",
-            )
-        )
-    else:
-        edate, confirmed, est = nxt
-        days = (edate - as_of).days
-        hz = ("1w",) if days <= 7 else ("1w", "1m") if days <= 31 else ("1m", "3m")
-        out.append(
-            Evidence(
-                "next_earnings_date",
-                "catalysts",
-                Status.DESCRIPTIVE,
-                f"{edate.isoformat()} ({days}d away"
-                + (", confirmed" if confirmed else ", estimated")
-                + ")",
-                "earnings_observations",
-                edate,
-                hz,
-                "Next scheduled earnings release. A dated, known event-risk window.",
-                "A date, not a forecast. It says when uncertainty resolves, not how. "
-                "Event risk is elevated into this date at short horizons.",
-            )
-        )
-        if est is not None:
-            out.append(
-                Evidence(
-                    "eps_estimate_next",
-                    "catalysts",
-                    Status.DESCRIPTIVE,
-                    f"{float(est):.2f}",
-                    "earnings_observations",
-                    edate,
-                    hz,
-                    "consensus EPS estimate for the next release",
-                    "A vendor consensus figure, not a platform forecast.",
-                )
-            )
     if prev is not None:
         pdate, pest, pact = prev
         if pest is not None and pact is not None:

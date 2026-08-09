@@ -41,6 +41,11 @@ SECURITY_DOMAINS = frozenset(
     }
 )
 
+# Groups that describe UNCERTAINTY rather than direction. Excluded from the
+# directional view by construction: a scheduled event has no sign. They reach the
+# recommendation only through the action stage, as a guardrail.
+NON_DIRECTIONAL_GROUPS = frozenset({"event_risk"})
+
 # Descriptive sizing reference, NOT a policy limit. Equal weight across the
 # holdings actually present. Used only to discourage ADD, never to force TRIM.
 ADD_DISCOURAGE_MULTIPLE = Decimal(3)
@@ -61,6 +66,7 @@ def directional_view(
         if horizon in e.horizons
         and e.status is not Status.UNAVAILABLE
         and e.domain in SECURITY_DOMAINS
+        and e.group not in NON_DIRECTIONAL_GROUPS
     ]
     if not rel:
         return Direction.UNAVAILABLE, [], []
@@ -142,6 +148,7 @@ def confidence_for(
         if horizon in e.horizons
         and e.status is not Status.UNAVAILABLE
         and e.domain in SECURITY_DOMAINS
+        and e.group not in NON_DIRECTIONAL_GROUPS
     ]
     groups = sorted({e.group for e in rel})
     basis.append(
@@ -204,6 +211,17 @@ def portfolio_adjustment(
     )
 
 
+def event_state_for(evidence: list[Evidence], horizon: str) -> tuple[str, str]:
+    """(status, detail) for this horizon. Never returns a direction."""
+    hit = next(
+        (e for e in evidence if e.name == f"event_state_{horizon}"),
+        None,
+    )
+    if hit is None or hit.status is Status.UNAVAILABLE:
+        return "UNAVAILABLE", (hit.missing_reason if hit else "no event item emitted")
+    return hit.value.split(" (")[0], hit.value
+
+
 def decide(
     evidence: list[Evidence], constraints: list[Constraint], pos: PositionState
 ) -> list[HorizonVerdict]:
@@ -215,14 +233,22 @@ def decide(
         conf, basis = confidence_for(evidence, horizon, direction, conflicts, pos)
         baseline, why_baseline = _baseline_action(direction, len(contributing))
 
+        event_status, event_detail = event_state_for(evidence, horizon)
         action = baseline
         changed = False
+        event_changed = False
         if effect == "BREACH":
             action = Action.EXIT if direction is Direction.NEGATIVE else Action.TRIM
             changed = action is not baseline
         elif effect == "CONCENTRATED" and baseline is Action.ADD:
             action = Action.HOLD
             changed = True
+        elif event_status == "IMMINENT" and baseline is Action.ADD:
+            # Same established pattern as the concentration guardrail: an
+            # unresolved binary event suppresses INITIATING exposure. It never
+            # forces a reduction, because proximity carries no sign.
+            action = Action.HOLD
+            event_changed = True
 
         if changed and effect == "BREACH":
             sizing = (
@@ -240,10 +266,26 @@ def decide(
                 f"from translating into ADD. {effect_text} This is a **position-sizing "
                 f"effect, not a bearish view on the company**."
             )
+        elif event_changed:
+            sizing = (
+                f"Portfolio exposure did not change this action. {effect_text} "
+                f"However an unresolved scheduled event is **IMMINENT** "
+                f"({event_detail}). The directional evidence remains "
+                f"{direction.value} and is **unchanged**; increasing exposure "
+                f"immediately before an unresolved binary event is suppressed by the "
+                f"experimental event-risk guardrail. This is a **timing and "
+                f"position-management effect, not a view on the outcome** - the "
+                f"guardrail is symmetric and carries no expectation of direction."
+            )
         else:
+            note = (
+                f" Scheduled-event state for this horizon: {event_status}."
+                if event_status not in ("UNAVAILABLE",)
+                else ""
+            )
             sizing = (
                 f"Portfolio exposure did **not** change this action. {effect_text} "
-                f"The recommendation is driven by the security view."
+                f"The recommendation is driven by the security view.{note}"
             )
 
         rationale = (
