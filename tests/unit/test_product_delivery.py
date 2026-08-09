@@ -129,3 +129,36 @@ def test_delivery_can_oppose_momentum():
         group="absolute_momentum",
     )
     assert directional_view([mom, _ev(_rec(7))], "1m")[0] is Direction.CONFLICTED
+
+
+# -- peer ranking: the vote measures deviation, not conformity -----------------
+def test_vote_uses_peer_percentile_not_raw_state():
+    """Beating is the norm; a median beat rate must not read as POSITIVE."""
+    from mip.product.slice import DELIVERY_BOTTOM, DELIVERY_TOP
+
+    assert 0 < DELIVERY_BOTTOM < DELIVERY_TOP < 1
+
+
+def test_percentile_bands_match_valuation_treatment():
+    from mip.product.slice import DELIVERY_BOTTOM, DELIVERY_TOP
+    from mip.product.valuation import BANDS
+
+    assert float(BANDS[0][0]) == DELIVERY_BOTTOM
+    assert float(BANDS[3][0]) == DELIVERY_TOP
+
+
+def test_midrank_percentile_handles_ties():
+    """A block of perfect records must not be pushed out of the top band."""
+    peers = [1.0] * 11 + [0.5] * 34
+    rate = 1.0
+    below = sum(1 for v in peers if v < rate)
+    equal = sum(1 for v in peers if v == rate)
+    pct = (below + equal / 2) / len(peers)
+    assert pct > 0.80  # would be 0.76 under a strictly-below rule
+
+
+def test_no_peers_yields_neutral_not_positive():
+    r = DeliveryRecord(
+        "CONSISTENT_BEATS", 8, 8, 0, 0, 0.05, AS, "r", beat_rate=1.0, percentile=None, peer_count=3
+    )
+    assert r.percentile is None  # too few peers -> the vote must abstain

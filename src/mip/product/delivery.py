@@ -22,6 +22,11 @@ from sqlalchemy import text
 
 WINDOW = 8  # most recent completed reports considered
 MIN_REPORTS = 6  # below this, no state is claimed
+MIN_PEERS = 20  # below this, no peer ranking is claimed
+
+# Bands on the PEER PERCENTILE, matching the valuation module's treatment.
+TOP_BAND = 0.80
+BOTTOM_BAND = 0.20
 
 # Declared, not fitted: a three-quarters record either way is treated as a
 # consistent pattern; anything between is mixed.
@@ -31,6 +36,16 @@ WEAK_BEATS = 2
 
 @dataclass(frozen=True, slots=True)
 class DeliveryRecord:
+    """`state` describes the record. `percentile` places it among peers.
+
+    The directional vote uses the PERCENTILE, not the state. Beating consensus is
+    the norm - the median holding here beats in 88% of quarters - so "beats often"
+    describes a company that is ordinary, not one that is outperforming
+    expectations. The economic hypothesis behind the vote (analysts under-react to
+    firms that surprise) concerns deviation from what is expected, so the vote must
+    measure deviation from the peer norm rather than conformity to it.
+    """
+
     state: str  # CONSISTENT_BEATS | MIXED | CONSISTENT_MISSES | UNAVAILABLE
     n_reports: int
     beats: int
@@ -39,6 +54,39 @@ class DeliveryRecord:
     median_abs_dollar_surprise: float | None
     last_report: date | None
     reason: str
+    beat_rate: float | None = None
+    percentile: float | None = None
+    peer_count: int = 0
+
+
+def _beat_rate(rows) -> float | None:
+    if len(rows) < MIN_REPORTS:
+        return None
+    beats = sum(1 for _dt, est, act in rows if float(act) > float(est))
+    return beats / len(rows)
+
+
+def population_beat_rates(session, as_of: date) -> dict[str, float]:
+    """Beat rate for every instrument carrying enough completed reports."""
+    rows = session.execute(
+        text(
+            "select i.symbol, e.earnings_date, e.eps_estimate, e.eps_actual "
+            "from earnings_observations e join instruments i on i.id=e.instrument_id "
+            "where e.observed_at::date <= :d and e.earnings_date < :d "
+            "and e.eps_actual is not null and e.eps_estimate is not null "
+            "order by i.symbol, e.earnings_date desc"
+        ),
+        {"d": as_of},
+    ).all()
+    by: dict[str, list] = {}
+    for sym, dt, est, act in rows:
+        by.setdefault(sym, []).append((dt, est, act))
+    out = {}
+    for sym, rs in by.items():
+        r = _beat_rate(rs[:WINDOW])
+        if r is not None:
+            out[sym] = r
+    return out
 
 
 def assess(session, symbol: str, as_of: date) -> DeliveryRecord:
@@ -84,6 +132,16 @@ def assess(session, symbol: str, as_of: date) -> DeliveryRecord:
     else:
         state = "MIXED"
 
+    rate = beats / len(rows)
+    pop = population_beat_rates(session, as_of)
+    peers = [v for k, v in pop.items() if k != symbol]
+    pct = None
+    if len(peers) >= MIN_PEERS:
+        # Midrank percentile: ties share a rank, so a block of perfect records is
+        # not pushed out of the top band merely by how many share it.
+        below = sum(1 for v in peers if v < rate)
+        equal = sum(1 for v in peers if v == rate)
+        pct = (below + equal / 2) / len(peers)
     return DeliveryRecord(
         state,
         len(rows),
@@ -94,4 +152,7 @@ def assess(session, symbol: str, as_of: date) -> DeliveryRecord:
         rows[0][0],
         f"{beats} beats / {misses} misses / {inline} in line over the last "
         f"{len(rows)} completed reports",
+        beat_rate=rate,
+        percentile=pct,
+        peer_count=len(peers),
     )

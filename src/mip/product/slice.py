@@ -211,6 +211,7 @@ def gather_evidence(session, symbol: str, as_of: date) -> list[Evidence]:
                     desc,
                     "not computed for this symbol at this date",
                     missing_reason="no non-null feature value at or before as_of",
+                    group=grp,
                 )
             )
             continue
@@ -786,6 +787,10 @@ def _valuation_evidence(session, symbol: str, as_of: date) -> Evidence:
 # so 1w is deliberately excluded. No horizon weights are invented.
 DELIVERY_HORIZONS = ("1m", "3m", "6m", "1y")
 
+# Bands on the PEER PERCENTILE, matching the valuation module's treatment.
+DELIVERY_TOP = 0.80
+DELIVERY_BOTTOM = 0.20
+
 
 def _delivery_evidence(session, symbol: str, as_of: date) -> Evidence:
     r = assess_delivery(session, symbol, as_of)
@@ -803,32 +808,44 @@ def _delivery_evidence(session, symbol: str, as_of: date) -> Evidence:
             missing_reason=r.reason,
             group="earnings_delivery",
         )
-    direction = (
-        Direction.POSITIVE
-        if r.state == "CONSISTENT_BEATS"
-        else Direction.NEGATIVE if r.state == "CONSISTENT_MISSES" else Direction.NEUTRAL
-    )
+    # The vote uses the PEER PERCENTILE, not the raw state. Beating consensus is
+    # the norm here - the median holding beats in 88% of quarters - so a
+    # "consistent beater" is an ordinary company, not one exceeding expectations.
+    if r.percentile is None:
+        direction = Direction.NEUTRAL
+        rank = "peer ranking unavailable (too few comparable records)"
+    else:
+        direction = (
+            Direction.POSITIVE
+            if r.percentile > DELIVERY_TOP
+            else Direction.NEGATIVE if r.percentile < DELIVERY_BOTTOM else Direction.NEUTRAL
+        )
+        rank = (
+            f"{r.percentile:.0%} of {r.peer_count} peers by beat rate "
+            f"(this company beats {r.beat_rate:.0%} of the time)"
+        )
     return Evidence(
         "earnings_delivery_record",
         "earnings",
         Status.DESCRIPTIVE,
-        f"{r.state} ({r.beats}/{r.n_reports} beats, median miss/beat "
-        f"${r.median_abs_dollar_surprise:.2f})",
+        f"{r.state}, {rank}",
         "earnings_observations",
         r.last_report,
         DELIVERY_HORIZONS,
-        f"Delivery against contemporaneous consensus: {r.reason}. Magnitude is "
+        f"Delivery against contemporaneous consensus: {r.reason}. Ranked against "
+        f"every instrument carrying at least {6} completed reports. Magnitude is "
         f"reported in EPS dollars, not percent.",
         "Sign only. PERCENTAGE surprise is deliberately not used: it divides by the "
         "estimate, and these estimates are frequently near zero, so a $1.00 miss "
-        "against a $0.02 estimate reads as -5000% - a denominator artifact, not a "
-        "catastrophe. BASE-RATE CAVEAT: 30 of the 45 holdings with a record beat "
-        "consistently, so CONSISTENT_BEATS is the norm and discriminates weakly; "
-        "CONSISTENT_MISSES is the genuinely unusual state. This describes EXECUTION, "
-        "not expected return: whether a habitual beater subsequently outperforms has "
-        "NOT been measured here, and the earnings schedule was captured in a single "
-        "ingest, so a point-in-time backtest of that link is not possible from this "
-        "data. EXPERIMENTAL.",
+        "against a $0.02 estimate reads as -5000% - a denominator artifact. "
+        "The directional vote measures the beat rate's position among peers, not "
+        "the raw record, because beating is the norm and conformity to a norm is "
+        "not evidence of anything. ECONOMIC HYPOTHESIS (stated, not demonstrated): "
+        "firms whose delivery is unusual relative to peers may be systematically "
+        "mis-anticipated by consensus. This describes EXECUTION, not expected "
+        "return: whether unusual delivery precedes unusual returns has NOT been "
+        "measured here, and the single-ingest earnings schedule makes a "
+        "point-in-time test of that link impossible from this data. EXPERIMENTAL.",
         direction=direction,
         group="earnings_delivery",
         ambiguous=True,
