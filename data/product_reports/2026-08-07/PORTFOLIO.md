@@ -1,10 +1,10 @@
 # Portfolio Command Centre
 
-*As of 2026-08-07. 52 holdings. Prices through 2026-08-07. Generated at commit `e2968b6`.*
+*As of 2026-08-07. 52 holdings. Prices through 2026-08-07. Generated at commit `f584b62`.*
 
 > Column **View** is the security assessment. Column **Action** is the portfolio decision. They are computed separately: portfolio weight cannot reach the view. Evidence strength is an experimental evidence-quality label, not a probability.
 
-## ACTION REQUIRED (50)
+## ACTION REQUIRED (49)
 
 *an ADD, TRIM or EXIT is indicated at one or more horizons*
 
@@ -31,7 +31,6 @@
 | **PYPL** | 1.68% | ADD | ADD | ADD | ADD | HOLD | POSITIVE | LOW | 9 | CURRENT |
 | **CELH** | 1.66% | TRIM | TRIM | TRIM | TRIM | TRIM | NEGATIVE | LOW | 9 | CURRENT |
 | **SNOW** | 1.64% | ADD | ADD | ADD | HOLD | HOLD | POSITIVE | LOW | 9 | CURRENT |
-| **GOOG** | 1.58% | TRIM | HOLD | HOLD | HOLD | HOLD | CONFLICTED | LOW | 9 | CURRENT |
 | **MARA** | 1.47% | TRIM | TRIM | ADD | ADD | HOLD | NEGATIVE | LOW | 9 | CURRENT |
 | **AAPL** | 1.25% | TRIM | HOLD | HOLD | HOLD | HOLD | CONFLICTED | LOW | 9 | CURRENT |
 | **MSFT** | 1.24% | ADD | ADD | ADD | HOLD | HOLD | POSITIVE | LOW | 9 | CURRENT |
@@ -61,13 +60,14 @@
 | **FUBO** | 0.12% | HOLD | HOLD | TRIM | HOLD | ADD | NEUTRAL | LOW | 9 | CURRENT |
 | **BBAI** | 0.05% | HOLD | TRIM | TRIM | HOLD | HOLD | NEGATIVE | LOW | 8 | BLOCKING(1W) |
 
-## REVIEW REQUIRED (2)
+## REVIEW REQUIRED (3)
 
 *conflicting evidence, material weight, thin evidence, or stale data*
 
 | Ticker | Weight | 1W | 1M | 3M | 6M | 1Y | View (1M) | Strength | Groups | Fresh |
 | --- | ---: | --- | --- | --- | --- | --- | --- | --- | ---: | --- |
 | **AMZN** | 11.20% | HOLD | HOLD | HOLD | HOLD | HOLD | POSITIVE | LOW | 9 | CURRENT |
+| **GOOG** | 1.58% | HOLD | HOLD | HOLD | HOLD | HOLD | CONFLICTED | LOW | 9 | CURRENT |
 | **MNDY** | 0.70% | HOLD | HOLD | HOLD | HOLD | HOLD | POSITIVE | LOW | 9 | CURRENT |
 
 ## NO IMMEDIATE ACTION (0)
@@ -96,7 +96,7 @@ None.
 | 12 | **RZLV** | 0.87% | TRIM indicated; ADD indicated |
 | 13 | **BBAI** | 0.05% | TRIM indicated; evidence conflicts; data stale |
 | 14 | **NKE** | 2.28% | TRIM indicated; evidence conflicts |
-| 15 | **GOOG** | 1.58% | TRIM indicated; evidence conflicts |
+| 15 | **AAPL** | 1.25% | TRIM indicated; evidence conflicts |
 
 ## Evidence detail per holding
 

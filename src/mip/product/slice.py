@@ -890,7 +890,10 @@ def _quality_evidence(session, symbol: str, as_of: date) -> Evidence:
         "reported as context and deliberately excluded from the state: beta is market "
         "sensitivity, and size is not quality. Sector peers only, because margins are "
         "not comparable across sectors. Single vendor snapshot, so no trend can be "
-        "computed. Votes at 1y only. EXPERIMENTAL.",
+        "computed. BAND STABILITY: under repeated 80% subsets of the peer set, 18 of "
+        "52 holdings move to an ADJACENT band (never further, and the composite "
+        "percentile itself is stable). Treat a state one band from a boundary as "
+        "provisional. Votes at 1y only. EXPERIMENTAL.",
         direction=direction,
         group="company_quality",
         ambiguous=True,

@@ -53,3 +53,51 @@ def list_() -> None:
                 f"{(inst.industry.name if inst.industry else '-'):26} "
                 f"{inst.name or '-'}"
             )
+
+
+@app.command("reference")
+def reference(
+    limit: int = typer.Option(50, "--limit", help="Max companies per sector."),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+) -> None:
+    """Build the fundamentals REFERENCE UNIVERSE (comparison only, never owned)."""
+    from sqlalchemy import text
+
+    from mip.cli._deps import open_session_factory
+    from mip.core.db import session_scope
+    from mip.reference_universe import collect
+
+    members, rejected = collect(limit_per_sector=limit)
+    typer.echo(f"candidates: {len(members)} eligible, {len(rejected)} rejected")
+
+    factory = open_session_factory()
+    added = existing = unmapped = 0
+    with session_scope(factory) as session:
+        sectors = {n: i for i, n in session.execute(text("select id, name from sectors")).all()}
+        have = {r[0] for r in session.execute(text("select symbol from instruments")).all()}
+        for m in members:
+            if m.symbol in have:
+                existing += 1
+                continue
+            sid = sectors.get(m.sector)
+            if sid is None:
+                unmapped += 1
+                continue
+            if dry_run:
+                added += 1
+                continue
+            session.execute(
+                text(
+                    "insert into instruments (symbol, name, instrument_type, sector_id, "
+                    "currency, is_active, created_at) values (:s, :n, 'stock', :sid, "
+                    "'USD', true, now())"
+                ),
+                {"s": m.symbol, "n": m.name[:120], "sid": sid},
+            )
+            added += 1
+    typer.echo(
+        f"reference universe: {added} added, {existing} already present "
+        f"(portfolio/benchmark), {unmapped} unmapped sector"
+    )
+    for sym, sec, why in rejected:
+        typer.echo(f"  rejected {sym} ({sec}): {why}")
