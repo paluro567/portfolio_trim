@@ -120,3 +120,68 @@ def test_guardrail_explanation_names_the_event_and_denies_direction():
     r = _run([mom, _event("1w", "IMMINENT (3d)")])[0].rationale
     assert "IMMINENT" in r
     assert "unchanged" in r and "not a view on the outcome" in r
+
+
+# -- acceptance blocker B3 (bug-fix release) ---------------------------------
+def test_portfolio_triage_reads_the_current_event_contract():
+    """B3: the triage must read event_state_{h}, not the retired field name."""
+    import inspect
+
+    from mip.product import portfolio_view as pv
+
+    src = inspect.getsource(pv)
+    assert "next_earnings_date" not in src
+    assert "event_state_1y" in src
+
+
+def test_next_event_extracts_date_and_days():
+    from mip.product.portfolio_view import _next_event
+
+    ev = [_event("1y", "WITHIN_HORIZON (79d, 2026-10-29)")]
+    label, days = _next_event(ev)
+    assert label == "2026-10-29 (79d)" and days == 79
+
+
+def test_next_event_unknown_stays_unknown():
+    """B3: absence must never become a fabricated date."""
+    from mip.product.portfolio_view import _next_event
+
+    label, days = _next_event([_event("1y", "-", Status.UNAVAILABLE)])
+    assert label == "unknown" and days is None
+    assert _next_event([])[0] == "unknown"
+
+
+def test_no_known_event_is_reported_without_a_date():
+    from mip.product.portfolio_view import _next_event
+
+    label, days = _next_event([_event("1y", "NO_KNOWN_EVENT")])
+    assert days is None and "no known event" in label
+
+
+def test_imminent_event_reaches_the_attention_ranking():
+    """B3: proximity must be able to raise research priority again."""
+    from decimal import Decimal
+
+    from mip.product.portfolio_view import summarise
+    from tests.unit.test_product_slice import _pos
+
+    ev = [_event("1y", "IMMINENT (3d, 2026-08-14)")]
+    row = summarise("TEST", _pos(market_weight=Decimal("0.01")), ev, [], None)
+    assert row.catalyst == "2026-08-14 (3d)"
+    assert any("earnings in 3d" in w for w in row.priority_why)
+
+
+def test_portfolio_event_agrees_with_the_holding_report():
+    """B3: the triage value must match the holding's own event evidence."""
+    from datetime import date as _d
+
+    from mip.cli._deps import open_session_factory
+    from mip.core.db import session_scope
+    from mip.product.portfolio_view import _next_event
+    from mip.product.slice import gather_evidence
+
+    with session_scope(open_session_factory()) as s:
+        ev = gather_evidence(s, "AMZN", _d(2026, 8, 11))
+    label, _ = _next_event(ev)
+    item = next(e for e in ev if e.name == "event_state_1y")
+    assert label.split(" ")[0] in item.value

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -35,6 +36,31 @@ class HoldingRow:
         return next(v.confidence.value for v in self.verdicts if v.horizon == h)
 
 
+_EVENT_RE = re.compile(r"\((\d+)d, (\d{4}-\d{2}-\d{2})\)")
+
+
+def _next_event(evidence: list[Evidence]) -> tuple[str, int | None]:
+    """Read the CURRENT event contract: event_state_{h} carries the dated event.
+
+    Every horizon's item reports the same next event; only the in/out-of-window
+    status differs. The 1y item is used because it has the widest window, so a
+    known date is visible there whenever it is visible anywhere. Absence stays
+    "unknown" - no date is ever invented.
+    """
+    item = next(
+        (e for e in evidence if e.name == "event_state_1y" and e.status is not Status.UNAVAILABLE),
+        None,
+    )
+    if item is None:
+        return "unknown", None
+    m = _EVENT_RE.search(item.value)
+    if not m:
+        # NO_KNOWN_EVENT and similar carry a status but no date.
+        return item.value.split(" (")[0].replace("_", " ").lower(), None
+    days, when = int(m.group(1)), m.group(2)
+    return f"{when} ({days}d)", days
+
+
 def _best(evidence: list[Evidence], direction: Direction) -> str:
     hits = [e for e in evidence if e.direction is direction and e.status is not Status.UNAVAILABLE]
     if not hits:
@@ -52,14 +78,7 @@ def summarise(
 ) -> HoldingRow:
     avail = [e for e in evidence if e.status is not Status.UNAVAILABLE]
     groups = independent_groups(evidence, "1m")
-    catalyst = next(
-        (
-            e.value
-            for e in evidence
-            if e.name == "next_earnings_date" and e.status is not Status.UNAVAILABLE
-        ),
-        "unknown",
-    )
+    catalyst, catalyst_days = _next_event(evidence)
     risk = "concentration" if (pos.market_weight or 0) > Decimal("0.05") else "none flagged"
     if days_stale is None:
         fresh = "UNKNOWN"
@@ -89,14 +108,9 @@ def summarise(
     if pos.market_weight is not None and pos.market_weight > Decimal("0.05"):
         p += int(pos.market_weight * 100)
         why.append(f"material weight {pos.market_weight:.1%}")
-    if "d away" in catalyst:
-        try:
-            d = int(catalyst.split("(")[1].split("d")[0])
-            if d <= 14:
-                p += 20
-                why.append(f"earnings in {d}d")
-        except (IndexError, ValueError):
-            pass
+    if catalyst_days is not None and catalyst_days <= 14:
+        p += 20
+        why.append(f"earnings in {catalyst_days}d")
     if len(groups) <= 2:
         p += 10
         why.append(f"only {len(groups)} independent group(s)")

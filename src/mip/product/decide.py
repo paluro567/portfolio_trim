@@ -103,6 +103,39 @@ def directional_view(
     return (Direction.POSITIVE if pos_g else Direction.NEGATIVE), detail, []
 
 
+def group_tally(
+    evidence: list[Evidence], horizon: str, direction: Direction
+) -> tuple[int, int, int]:
+    """(supporting, opposing, neutral) GROUP counts for the stated direction."""
+    rel = [
+        e
+        for e in evidence
+        if horizon in e.horizons
+        and e.status is not Status.UNAVAILABLE
+        and e.domain in SECURITY_DOMAINS
+        and e.group not in NON_DIRECTIONAL_GROUPS
+    ]
+    groups: dict[str, list[Evidence]] = {}
+    for e in rel:
+        groups.setdefault(e.group, []).append(e)
+    supporting = opposing = neutral = 0
+    for items in groups.values():
+        pos = sum(1 for e in items if e.direction is Direction.POSITIVE)
+        neg = sum(1 for e in items if e.direction is Direction.NEGATIVE)
+        vote = (
+            Direction.POSITIVE
+            if pos > neg
+            else Direction.NEGATIVE if neg > pos else Direction.NEUTRAL
+        )
+        if vote is Direction.NEUTRAL:
+            neutral += 1
+        elif vote is direction:
+            supporting += 1
+        else:
+            opposing += 1
+    return supporting, opposing, neutral
+
+
 def independent_groups(evidence: list[Evidence], horizon: str) -> list[str]:
     return sorted(
         {
@@ -115,14 +148,27 @@ def independent_groups(evidence: list[Evidence], horizon: str) -> list[str]:
     )
 
 
-def _baseline_action(direction: Direction, n_signed: int) -> tuple[Action, str]:
-    """Stage 1 -> the action the security view alone implies."""
+def _baseline_action(direction: Direction, tally: tuple[int, int, int]) -> tuple[Action, str]:
+    """Stage 1 -> the action the security view alone implies.
+
+    `tally` is (supporting, opposing, neutral) GROUP counts. Only groups that
+    actually vote for the stated direction are described as supporting it;
+    neutral groups are reported separately and never inflate conviction.
+    """
+    supporting, opposing, neutral = tally
     if direction is Direction.POSITIVE:
-        return Action.ADD, "the security view is positive"
+        return (
+            Action.ADD,
+            f"the security view is positive on {supporting} of "
+            f"{supporting + opposing + neutral} evidence group(s) "
+            f"({opposing} opposing, {neutral} neutral)",
+        )
     if direction is Direction.NEGATIVE:
         return (
             Action.TRIM,
-            f"the security view is negative on {n_signed} independent reading(s)",
+            f"the security view is negative on {supporting} of "
+            f"{supporting + opposing + neutral} evidence group(s) "
+            f"({opposing} opposing, {neutral} neutral)",
         )
     if direction is Direction.CONFLICTED:
         return Action.HOLD, "security evidence conflicts, so no change is indicated"
@@ -231,7 +277,9 @@ def decide(
     for horizon, _ in HORIZONS:
         direction, contributing, conflicts = directional_view(evidence, horizon)
         conf, basis = confidence_for(evidence, horizon, direction, conflicts, pos)
-        baseline, why_baseline = _baseline_action(direction, len(contributing))
+        baseline, why_baseline = _baseline_action(
+            direction, group_tally(evidence, horizon, direction)
+        )
 
         event_status, event_detail = event_state_for(evidence, horizon)
         action = baseline

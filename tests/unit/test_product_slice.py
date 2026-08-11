@@ -392,3 +392,66 @@ def test_evidence_groups_have_no_default_bucket():
         "valuation",
     ):
         assert dom in DOMAIN_GROUP and DOMAIN_GROUP[dom] != "other"
+
+
+# -- acceptance blockers B1/B2 (bug-fix release) ------------------------------
+def test_historical_sample_size_is_interpolated_not_literal():
+    """B1: the n= count must be a real integer, never the template text."""
+    from mip.cli._deps import open_session_factory
+    from mip.core.db import session_scope
+    from mip.product.slice import _historical
+
+    with session_scope(open_session_factory()) as s:
+        items = _historical(s, "AMZN", date(2026, 8, 11))
+    available = [e for e in items if e.status is not Status.UNAVAILABLE]
+    assert available, "AMZN must have historical evidence"
+    for e in available:
+        assert "{len(fwd)}" not in e.value
+        n = int(e.value.split("n=")[1])
+        assert n > 100
+
+
+def test_unavailable_history_carries_no_fabricated_sample_size():
+    """B1: an unavailable series must not display an n at all."""
+    from mip.cli._deps import open_session_factory
+    from mip.core.db import session_scope
+    from mip.product.slice import _historical
+
+    with session_scope(open_session_factory()) as s:
+        items = _historical(s, "RZLV", date(2026, 8, 11))
+    for e in items:
+        if e.status is Status.UNAVAILABLE:
+            assert "n=" not in e.value and e.missing_reason
+
+
+def test_headline_counts_only_supporting_groups():
+    """B2: neutral groups must never be described as supporting the view."""
+    from mip.product.decide import group_tally
+
+    ev = [
+        replace(_ev("a", "price/technical", Direction.NEGATIVE), group="absolute_momentum"),
+        replace(_ev("b", "sector"), group="sector_relative"),
+        replace(_ev("c", "valuation"), group="valuation_level"),
+    ]
+    supporting, opposing, neutral = group_tally(ev, "1m", Direction.NEGATIVE)
+    assert (supporting, opposing, neutral) == (1, 0, 2)
+
+
+def test_crm_3m_headline_no_longer_overstates_agreement():
+    """B2 regression: the exact acceptance-review failure case."""
+    from pathlib import Path
+
+    from mip.cli._deps import open_session_factory
+    from mip.core.db import session_scope
+    from mip.product.decide import decide
+    from mip.product.policy import load_policy
+    from mip.product.slice import evaluate_constraints, gather_evidence, load_position
+
+    bal = Path("data/peter_real_opening_balances_2026-07-16.csv")
+    with session_scope(open_session_factory()) as s:
+        pos = load_position(s, "CRM", date(2026, 8, 11), bal)
+        ev = gather_evidence(s, "CRM", date(2026, 8, 11))
+        v = decide(ev, evaluate_constraints(s and pos, load_policy()), pos)
+    r = next(x for x in v if x.horizon == "3m").rationale
+    assert "negative on 8 independent reading" not in r
+    assert "1 of 8 evidence group(s)" in r and "neutral" in r

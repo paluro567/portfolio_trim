@@ -405,7 +405,7 @@ def _historical(session, symbol: str, as_of: date) -> list[Evidence]:
                 "historical",
                 Status.DESCRIPTIVE,
                 f"median {med:+.2%}, p10 {p10:+.2%}, p90 {p90:+.2%}, positive {hit:.0%}, "
-                "n={len(fwd)}",
+                f"n={len(fwd)}",
                 "daily_prices",
                 closes[-1][0],
                 (h,),

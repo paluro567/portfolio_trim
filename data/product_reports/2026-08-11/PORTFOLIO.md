@@ -1,6 +1,6 @@
 # Portfolio Command Centre
 
-*As of 2026-08-11. 52 holdings. Prices through 2026-08-11. Generated at commit `f584b62`.*
+*As of 2026-08-11. 52 holdings. Prices through 2026-08-11. Generated at commit `10ea43b`.*
 
 > Column **View** is the security assessment. Column **Action** is the portfolio decision. They are computed separately: portfolio weight cannot reach the view. Evidence strength is an experimental evidence-quality label, not a probability.
 
@@ -84,74 +84,74 @@
 | # | Ticker | Weight | Why it ranks here |
 | ---: | --- | ---: | --- |
 | 1 | **CRM** | 5.09% | TRIM indicated; ADD indicated; evidence conflicts; material weight 5.1% |
-| 2 | **PLTR** | 4.85% | TRIM indicated; ADD indicated; evidence conflicts |
-| 3 | **AMD** | 1.62% | TRIM indicated; ADD indicated; evidence conflicts |
-| 4 | **AAPL** | 1.19% | TRIM indicated; ADD indicated; evidence conflicts |
-| 5 | **WYNN** | 1.02% | TRIM indicated; ADD indicated; evidence conflicts |
-| 6 | **T** | 0.48% | TRIM indicated; ADD indicated; evidence conflicts |
-| 7 | **FUBO** | 0.12% | TRIM indicated; ADD indicated; evidence conflicts |
-| 8 | **NOW** | 2.79% | TRIM indicated; ADD indicated |
-| 9 | **UNH** | 3.72% | TRIM indicated; ADD indicated |
-| 10 | **EL** | 0.85% | TRIM indicated; ADD indicated |
-| 11 | **RZLV** | 0.87% | TRIM indicated; ADD indicated |
-| 12 | **URNM** | 0.48% | TRIM indicated; ADD indicated |
-| 13 | **BBAI** | 0.05% | TRIM indicated; evidence conflicts; data stale |
-| 14 | **META** | 2.33% | TRIM indicated; evidence conflicts |
-| 15 | **NKE** | 2.21% | TRIM indicated; evidence conflicts |
+| 2 | **EL** | 0.85% | TRIM indicated; ADD indicated; earnings in 8d |
+| 3 | **PLTR** | 4.85% | TRIM indicated; ADD indicated; evidence conflicts |
+| 4 | **AMD** | 1.62% | TRIM indicated; ADD indicated; evidence conflicts |
+| 5 | **AAPL** | 1.19% | TRIM indicated; ADD indicated; evidence conflicts |
+| 6 | **WYNN** | 1.02% | TRIM indicated; ADD indicated; evidence conflicts |
+| 7 | **T** | 0.48% | TRIM indicated; ADD indicated; evidence conflicts |
+| 8 | **FUBO** | 0.12% | TRIM indicated; ADD indicated; evidence conflicts |
+| 9 | **SMCI** | 0.23% | TRIM indicated; evidence conflicts; earnings in 0d |
+| 10 | **NOW** | 2.79% | TRIM indicated; ADD indicated |
+| 11 | **UNH** | 3.72% | TRIM indicated; ADD indicated |
+| 12 | **RZLV** | 0.87% | TRIM indicated; ADD indicated |
+| 13 | **URNM** | 0.48% | TRIM indicated; ADD indicated |
+| 14 | **BBAI** | 0.05% | TRIM indicated; evidence conflicts; data stale |
+| 15 | **META** | 2.33% | TRIM indicated; evidence conflicts |
 
 ## Evidence detail per holding
 
 | Ticker | Strongest positive | Strongest negative | Sizing effect | Next earnings | Evidence |
 | --- | --- | --- | --- | --- | ---: |
-| **AMZN** | ret_21d = +0.1009 | none | suppressed ADD | unknown | 29/29 |
-| **HNST** | ret_21d = +0.3157 | valuation_position = ABOVE NORMAL (66% of reference set) | suppressed ADD | unknown | 29/29 |
-| **TSLA** | none | ret_21d = -0.1569 | none | unknown | 29/29 |
-| **CAKE** | ret_21d = +0.3796 | company_quality_position = WEAK (16% of Consumer Discretionary peers) | none | unknown | 29/29 |
-| **CRM** | ret_21d = +0.1533 | ret_252d = -0.1720 | none | unknown | 29/29 |
-| **PLTR** | ret_21d = +0.3453 | valuation_position = EXPENSIVE (92% of reference set) | none | unknown | 29/29 |
-| **ELF** | ret_21d = +0.2648 | company_quality_position = BELOW_PEER (36% of Consumer Staples peers) | none | unknown | 29/29 |
-| **ZETA** | ret_21d = +0.3329 | none | none | unknown | 29/29 |
+| **AMZN** | ret_21d = +0.1009 | none | suppressed ADD | 2026-10-29 (79d) | 29/29 |
+| **HNST** | ret_21d = +0.3157 | valuation_position = ABOVE NORMAL (66% of reference set) | suppressed ADD | 2026-11-04 (85d) | 29/29 |
+| **TSLA** | none | ret_21d = -0.1569 | none | 2026-10-21 (71d) | 29/29 |
+| **CAKE** | ret_21d = +0.3796 | company_quality_position = WEAK (16% of Consumer Discretionary peers) | none | 2026-10-27 (77d) | 29/29 |
+| **CRM** | ret_21d = +0.1533 | ret_252d = -0.1720 | none | 2026-08-26 (15d) | 29/29 |
+| **PLTR** | ret_21d = +0.3453 | valuation_position = EXPENSIVE (92% of reference set) | none | 2026-11-02 (83d) | 29/29 |
+| **ELF** | ret_21d = +0.2648 | company_quality_position = BELOW_PEER (36% of Consumer Staples peers) | none | 2026-11-04 (85d) | 29/29 |
+| **ZETA** | ret_21d = +0.3329 | none | none | 2026-11-03 (84d) | 29/29 |
 | **IWM** | ret_126d = +0.1325 | none | none | unknown | 17/30 |
-| **UNH** | ret_126d = +0.4785 | ret_21d = -0.0627 | none | unknown | 29/29 |
-| **SOFI** | none | valuation_position = ABOVE NORMAL (70% of reference set) | none | unknown | 29/29 |
+| **UNH** | ret_126d = +0.4785 | ret_21d = -0.0627 | none | 2026-10-27 (77d) | 29/29 |
+| **SOFI** | none | valuation_position = ABOVE NORMAL (70% of reference set) | none | 2026-10-27 (77d) | 29/29 |
 | **VTI** | ret_126d = +0.1176 | none | none | unknown | 17/30 |
-| **PATH** | ret_21d = +0.3266 | none | none | unknown | 29/29 |
-| **NOW** | ret_21d = +0.1463 | ret_252d = -0.2691 | none | unknown | 29/29 |
+| **PATH** | ret_21d = +0.3266 | none | none | 2026-09-03 (23d) | 29/29 |
+| **NOW** | ret_21d = +0.1463 | ret_252d = -0.2691 | none | 2026-10-28 (78d) | 29/29 |
 | **VOO** | ret_126d = +0.1167 | none | none | unknown | 17/30 |
-| **META** | company_quality_position = ABOVE_PEER (77% of Communication Services peers) | ret_21d = -0.0877 | none | unknown | 29/29 |
-| **NKE** | earnings_delivery_record = CONSISTENT_BEATS, 89% of 53 peers by beat rate (this company beats 100% of the time) | ret_21d = -0.0558 | none | unknown | 29/29 |
-| **NVDA** | company_quality_position = STRONG (90% of Information Technology peers) | ret_63d = -0.0077 | none | unknown | 29/29 |
-| **CELH** | company_quality_position = ABOVE_PEER (71% of Consumer Staples peers) | ret_126d = -0.4123 | none | unknown | 29/29 |
-| **PYPL** | ret_21d = +0.2382 | company_quality_position = BELOW_PEER (33% of Financials peers) | none | unknown | 29/29 |
-| **SNOW** | ret_21d = +0.2438 | company_quality_position = WEAK (7% of Information Technology peers) | none | unknown | 29/29 |
-| **AMD** | ret_126d = +1.1959 | ret_21d = -0.1124 | none | unknown | 29/29 |
-| **GOOG** | ret_252d = +0.7021 | ret_21d = -0.0219 | none | unknown | 29/29 |
-| **MARA** | none | ret_21d = -0.2059 | none | unknown | 29/29 |
-| **MSFT** | ret_21d = +0.2885 | ret_252d = -0.0272 | none | unknown | 29/29 |
-| **AAPL** | earnings_delivery_record = CONSISTENT_BEATS, 89% of 53 peers by beat rate (this company beats 100% of the time) | ret_21d = -0.0382 | none | unknown | 29/29 |
-| **WYNN** | ret_21d = +0.0789 | company_quality_position = BELOW_PEER (37% of Consumer Discretionary peers) | none | unknown | 29/29 |
-| **PINS** | ret_63d = +0.1440 | ret_252d = -0.3239 | none | unknown | 29/29 |
-| **RZLV** | ret_21d = +0.1165 | company_quality_position = WEAK (19% of Information Technology peers) | none | unknown | 27/29 |
-| **COIN** | none | ret_63d = -0.3140 | none | unknown | 29/29 |
-| **EL** | ret_21d = +0.0817 | ret_126d = -0.1072 | none | unknown | 29/29 |
-| **HOOD** | none | ret_21d = -0.1409 | none | unknown | 29/29 |
-| **AXP** | none | ret_21d = -0.0384 | none | unknown | 29/29 |
-| **MNDY** | price_to_ma50 = +0.0766 | ret_252d = -0.6474 | none | unknown | 29/29 |
-| **PANW** | ret_21d = +0.1620 | valuation_position = EXPENSIVE (83% of reference set) | none | unknown | 29/29 |
-| **HIMS** | none | ret_21d = -0.1126 | none | unknown | 29/29 |
-| **GEV** | company_quality_position = STRONG (95% of Industrials peers) | ret_21d = -0.0295 | none | unknown | 24/29 |
+| **META** | company_quality_position = ABOVE_PEER (77% of Communication Services peers) | ret_21d = -0.0877 | none | 2026-10-28 (78d) | 29/29 |
+| **NKE** | earnings_delivery_record = CONSISTENT_BEATS, 89% of 53 peers by beat rate (this company beats 100% of the time) | ret_21d = -0.0558 | none | 2026-09-29 (49d) | 29/29 |
+| **NVDA** | company_quality_position = STRONG (90% of Information Technology peers) | ret_63d = -0.0077 | none | 2026-08-26 (15d) | 29/29 |
+| **CELH** | company_quality_position = ABOVE_PEER (71% of Consumer Staples peers) | ret_126d = -0.4123 | none | 2026-11-09 (90d) | 29/29 |
+| **PYPL** | ret_21d = +0.2382 | company_quality_position = BELOW_PEER (33% of Financials peers) | none | 2026-10-27 (77d) | 29/29 |
+| **SNOW** | ret_21d = +0.2438 | company_quality_position = WEAK (7% of Information Technology peers) | none | 2026-09-02 (22d) | 29/29 |
+| **AMD** | ret_126d = +1.1959 | ret_21d = -0.1124 | none | 2026-11-03 (84d) | 29/29 |
+| **GOOG** | ret_252d = +0.7021 | ret_21d = -0.0219 | none | 2026-10-28 (78d) | 29/29 |
+| **MARA** | none | ret_21d = -0.2059 | none | 2026-11-04 (85d) | 29/29 |
+| **MSFT** | ret_21d = +0.2885 | ret_252d = -0.0272 | none | 2026-10-28 (78d) | 29/29 |
+| **AAPL** | earnings_delivery_record = CONSISTENT_BEATS, 89% of 53 peers by beat rate (this company beats 100% of the time) | ret_21d = -0.0382 | none | 2026-10-29 (79d) | 29/29 |
+| **WYNN** | ret_21d = +0.0789 | company_quality_position = BELOW_PEER (37% of Consumer Discretionary peers) | none | 2026-11-05 (86d) | 29/29 |
+| **PINS** | ret_63d = +0.1440 | ret_252d = -0.3239 | none | 2026-11-09 (90d) | 29/29 |
+| **RZLV** | ret_21d = +0.1165 | company_quality_position = WEAK (19% of Information Technology peers) | none | 2026-09-01 (21d) | 27/29 |
+| **COIN** | none | ret_63d = -0.3140 | none | 2026-10-29 (79d) | 29/29 |
+| **EL** | ret_21d = +0.0817 | ret_126d = -0.1072 | none | 2026-08-19 (8d) | 29/29 |
+| **HOOD** | none | ret_21d = -0.1409 | none | 2026-11-04 (85d) | 29/29 |
+| **AXP** | none | ret_21d = -0.0384 | none | 2026-10-23 (73d) | 29/29 |
+| **MNDY** | price_to_ma50 = +0.0766 | ret_252d = -0.6474 | none | no known event | 29/29 |
+| **PANW** | ret_21d = +0.1620 | valuation_position = EXPENSIVE (83% of reference set) | none | 2026-09-01 (21d) | 29/29 |
+| **HIMS** | none | ret_21d = -0.1126 | none | no known event | 29/29 |
+| **GEV** | company_quality_position = STRONG (95% of Industrials peers) | ret_21d = -0.0295 | none | 2026-10-28 (78d) | 24/29 |
 | **URNM** | ret_21d = +0.1028 | ret_63d = -0.1880 | none | unknown | 20/30 |
-| **T** | ret_21d = +0.1369 | ret_126d = -0.0746 | none | unknown | 29/29 |
-| **RBRK** | ret_21d = +0.1561 | company_quality_position = WEAK (7% of Information Technology peers) | none | unknown | 24/29 |
-| **SPCX** | none | valuation_position = EXPENSIVE (87% of reference set) | none | unknown | 13/29 |
-| **CRWD** | ret_21d = +0.1809 | valuation_position = EXPENSIVE (95% of reference set) | none | unknown | 29/29 |
-| **INFQ** | none | none | none | unknown | 17/29 |
-| **BE** | ret_252d = +4.7394 | ret_63d = -0.2561 | none | unknown | 29/29 |
-| **ORCL** | ret_21d = +0.1060 | ret_63d = -0.2469 | none | unknown | 29/29 |
-| **MA** | ret_63d = +0.1297 | ret_252d = -0.0163 | none | unknown | 29/29 |
-| **SMCI** | ret_21d = +0.1424 | ret_252d = -0.2915 | none | unknown | 29/29 |
-| **TTD** | company_quality_position = STRONG (82% of Communication Services peers) | ret_21d = -0.3148 | none | unknown | 29/29 |
-| **CVX** | ret_21d = +0.0794 | rel_ret_sector_126d = -0.0541 | none | unknown | 29/29 |
-| **CORZ** | none | ret_21d = -0.1299 | none | unknown | 24/29 |
-| **FUBO** | valuation_position = CHEAP (18% of reference set) | ret_126d = -0.4575 | none | unknown | 29/29 |
-| **BBAI** | valuation_position = BELOW NORMAL (27% of reference set) | ret_126d = -0.7657 | none | unknown | 23/29 |
+| **T** | ret_21d = +0.1369 | ret_126d = -0.0746 | none | 2026-10-21 (71d) | 29/29 |
+| **RBRK** | ret_21d = +0.1561 | company_quality_position = WEAK (7% of Information Technology peers) | none | 2026-08-27 (16d) | 24/29 |
+| **SPCX** | none | valuation_position = EXPENSIVE (87% of reference set) | none | 2026-11-03 (84d) | 13/29 |
+| **CRWD** | ret_21d = +0.1809 | valuation_position = EXPENSIVE (95% of reference set) | none | 2026-08-26 (15d) | 29/29 |
+| **INFQ** | none | none | none | 2026-08-12 (1d) | 17/29 |
+| **BE** | ret_252d = +4.7394 | ret_63d = -0.2561 | none | 2026-10-27 (77d) | 29/29 |
+| **ORCL** | ret_21d = +0.1060 | ret_63d = -0.2469 | none | 2026-09-09 (29d) | 29/29 |
+| **MA** | ret_63d = +0.1297 | ret_252d = -0.0163 | none | 2026-10-29 (79d) | 29/29 |
+| **SMCI** | ret_21d = +0.1424 | ret_252d = -0.2915 | none | 2026-08-11 (0d) | 29/29 |
+| **TTD** | company_quality_position = STRONG (82% of Communication Services peers) | ret_21d = -0.3148 | none | 2026-11-05 (86d) | 29/29 |
+| **CVX** | ret_21d = +0.0794 | rel_ret_sector_126d = -0.0541 | none | 2026-10-30 (80d) | 29/29 |
+| **CORZ** | none | ret_21d = -0.1299 | none | 2026-10-23 (73d) | 24/29 |
+| **FUBO** | valuation_position = CHEAP (18% of reference set) | ret_126d = -0.4575 | none | 2026-11-04 (85d) | 29/29 |
+| **BBAI** | valuation_position = BELOW NORMAL (27% of reference set) | ret_126d = -0.7657 | none | 2026-11-02 (83d) | 23/29 |
