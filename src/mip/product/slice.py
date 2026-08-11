@@ -30,6 +30,7 @@ from mip.product.delivery import assess as assess_delivery
 from mip.product.event import classify as classify_event
 from mip.product.event import magnitude as event_magnitude
 from mip.product.event import next_event
+from mip.product.quality import assess as assess_quality
 from mip.product.valuation import assess as assess_valuation
 
 ALL_H = tuple(h for h, _ in HORIZONS)
@@ -589,26 +590,8 @@ def _fundamentals(session, symbol: str, as_of: date) -> list[Evidence]:
             )
         )
 
-    if margin is not None:
-        add("profit_margin", "fundamentals", f"{float(margin):.2%}", "trailing net profit margin")
-    if de is not None:
-        add(
-            "debt_to_equity",
-            "fundamentals",
-            f"{float(de):.2f}",
-            "debt to equity; lower is less levered",
-        )
-    if beta is not None:
-        add(
-            "beta",
-            "fundamentals",
-            f"{float(beta):.3f}",
-            "sensitivity to the market; >1 amplifies market moves",
-        )
-    if mcap is not None:
-        add("market_cap", "fundamentals", f"${float(mcap) / 1e9:,.1f}B", "market capitalisation")
-    if rev is not None:
-        add("revenue_ttm", "fundamentals", f"${float(rev) / 1e9:,.1f}B", "trailing revenue")
+    out.append(_quality_evidence(session, symbol, as_of))
+
     return out
 
 
@@ -848,5 +831,67 @@ def _delivery_evidence(session, symbol: str, as_of: date) -> Evidence:
         "point-in-time test of that link impossible from this data. EXPERIMENTAL.",
         direction=direction,
         group="earnings_delivery",
+        ambiguous=True,
+    )
+
+
+# Quality is the slowest-moving thing this engine measures: a single
+# annual-frequency snapshot of profitability and leverage. The quality premium it
+# leans on is a long-horizon phenomenon, so it votes at 1y only.
+QUALITY_VOTING_HORIZONS = ("1y",)
+
+
+def _quality_evidence(session, symbol: str, as_of: date) -> Evidence:
+    a = assess_quality(session, symbol, as_of)
+    ctx = "; ".join(f"{k} {v}" for k, v in a.context)
+    if a.state == "UNAVAILABLE":
+        return Evidence(
+            "company_quality_position",
+            "fundamentals",
+            Status.UNAVAILABLE,
+            "-",
+            "company_fundamentals",
+            a.as_of,
+            QUALITY_VOTING_HORIZONS,
+            (
+                f"peer-relative business quality. Context: {ctx}"
+                if ctx
+                else "peer-relative business quality"
+            ),
+            a.reason,
+            missing_reason=a.reason,
+            group="company_quality",
+        )
+    comps = "; ".join(
+        f"{m} {float(v):.2f} -> {float(p):.0%} of {n} peers" for m, v, p, n in a.components
+    )
+    direction = (
+        Direction.POSITIVE
+        if a.state in ("STRONG", "ABOVE_PEER")
+        else Direction.NEGATIVE if a.state in ("WEAK", "BELOW_PEER") else Direction.NEUTRAL
+    )
+    return Evidence(
+        "company_quality_position",
+        "fundamentals",
+        Status.DESCRIPTIVE,
+        f"{a.state} ({float(a.composite_percentile):.0%} of {a.sector} peers)",
+        "company_fundamentals",
+        a.as_of,
+        QUALITY_VOTING_HORIZONS,
+        f"Business quality against {a.peer_count} {a.sector} peers. Components: "
+        f"{comps}. Higher profitability and lower leverage rank better; the composite "
+        f"is the mean of the component percentiles."
+        + (f" Context (not part of the state): {ctx}." if ctx else ""),
+        "A GOOD COMPANY IS NOT THE SAME THING AS A RISING STOCK. The state describes "
+        "the business only. The directional reading rests on an economic hypothesis - "
+        "that persistently profitable, lightly levered firms have historically earned "
+        "better risk-adjusted returns over long holding periods - which has NOT been "
+        "measured in this repository. Beta, market capitalisation and revenue are "
+        "reported as context and deliberately excluded from the state: beta is market "
+        "sensitivity, and size is not quality. Sector peers only, because margins are "
+        "not comparable across sectors. Single vendor snapshot, so no trend can be "
+        "computed. Votes at 1y only. EXPERIMENTAL.",
+        direction=direction,
+        group="company_quality",
         ambiguous=True,
     )
