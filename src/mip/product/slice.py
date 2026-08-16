@@ -152,6 +152,12 @@ def _market_feat(session, name: str, as_of: date):
     ).first()
 
 
+# Bands on an item's percentile within its OWN history. Unchanged values, named
+# so the report can quote the rule it actually applies instead of a copy of it.
+OWN_HISTORY_TOP = 0.70
+OWN_HISTORY_BOTTOM = 0.30
+
+
 def _pctile(session, symbol: str, name: str, as_of: date, value: float) -> float | None:
     hist = (
         session.execute(
@@ -222,8 +228,8 @@ def gather_evidence(session, symbol: str, as_of: date) -> list[Evidence]:
         if name.startswith(("ret_", "rel_ret_", "price_to_")) and pc is not None:
             direction = (
                 Direction.POSITIVE
-                if pc >= 0.70
-                else Direction.NEGATIVE if pc <= 0.30 else Direction.NEUTRAL
+                if pc >= OWN_HISTORY_TOP
+                else Direction.NEGATIVE if pc <= OWN_HISTORY_BOTTOM else Direction.NEUTRAL
             )
         pctxt = f"; {pc:.0%} of its own history" if pc is not None else "; percentile unavailable"
         ev.append(
@@ -313,8 +319,8 @@ def gather_evidence(session, symbol: str, as_of: date) -> list[Evidence]:
         if pc is not None:
             direction = (
                 Direction.POSITIVE
-                if pc >= 0.70
-                else Direction.NEGATIVE if pc <= 0.30 else Direction.NEUTRAL
+                if pc >= OWN_HISTORY_TOP
+                else Direction.NEGATIVE if pc <= OWN_HISTORY_BOTTOM else Direction.NEUTRAL
             )
         pctxt = f"; {pc:.0%} of its own history" if pc is not None else ""
         ev.append(

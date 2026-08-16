@@ -1,7 +1,14 @@
-"""Deterministic Markdown renderer for the V4 vertical slice."""
+"""Deterministic Markdown renderer for the V4 vertical slice.
+
+Layout is tiered: a decision snapshot that can be read in about a minute, the
+supporting investment evidence underneath it, and the audit trail below that.
+Nothing here computes a view, an action or a confidence - every value rendered
+was decided upstream in `slice`, `decide` and `snapshot`.
+"""
 
 from __future__ import annotations
 
+from mip.product import snapshot
 from mip.product.contracts import (
     Constraint,
     Evidence,
@@ -9,6 +16,7 @@ from mip.product.contracts import (
     PositionState,
     Status,
 )
+from mip.product.decide import portfolio_adjustment
 
 DISCLOSURE = (
     "Confidence is an experimental evidence-quality assessment, not a probability "
@@ -24,8 +32,21 @@ def _money(v) -> str:
     return "unavailable" if v is None else f"${v:,.2f}"
 
 
-def _sec(n: int, title: str) -> str:
+def _cell(v) -> str:
+    """Escape a value for a Markdown table cell.
+
+    Some observed values legitimately contain a pipe - `median |move| 7.3%` -
+    which silently splits the row into extra columns when written raw.
+    """
+    return str(v).replace("|", "\\|")
+
+
+def _sec(n, title: str) -> str:
     return f"\n## {n}. {title}\n"
+
+
+def _tier(label: str) -> str:
+    return f"\n---\n\n### {label}\n\n---\n"
 
 
 def render(
@@ -39,10 +60,11 @@ def render(
     add = lines.append
 
     add(f"# {pos.symbol} — Portfolio Decision Support")
+    _age = (pos.as_of - pos.price_date).days if pos.price_date else None
     stale = ""
-    if pos.price_date is not None and (pos.as_of - pos.price_date).days > 1:
+    if _age is not None and _age > 1:
         stale = (
-            f" **Price is {(pos.as_of - pos.price_date).days} calendar days stale** "
+            f" **Price is {_age} calendar days stale** "
             f"(last close {pos.price_date.isoformat()})."
         )
     add(
@@ -55,68 +77,92 @@ def render(
         f"return, and no predictive score. Directional readings are EXPERIMENTAL: no "
         f"predictive reliability has been established for any signal used here."
     )
-
-    add("\n## 1b. Data freshness\n")
-    add("| Field | Value |")
-    add("| --- | --- |")
-    add(f"| AS-OF DATE | {pos.as_of.isoformat()} |")
-    add(f"| LATEST SECURITY PRICE | {pos.price_date or 'unavailable'} |")
-    add(f"| LATEST FEATURE / OBSERVED DATA | {meta.get('feature_date', 'unavailable')} |")
-    _age = (pos.as_of - pos.price_date).days if pos.price_date else None
-    add(f"| DATA AGE | {'unavailable' if _age is None else f'{_age} calendar day(s)'} |")
-    _fresh = (
-        "UNKNOWN"
-        if _age is None
-        else (
-            "CURRENT"
-            if _age <= 1
-            else (
-                "STALE - 1W reading is weakened"
-                if _age <= 4
-                else "BLOCKING - 1W evidence is too old to support a 1-week view"
-            )
-        )
-    )
-    add(f"| FRESHNESS STATUS | **{_fresh}** |")
     if _age is not None and _age > 4:
         add(
             "\n> **1W caution.** The latest price is more than four calendar days old. "
             "Treat the 1-week row as unsupported until prices are refreshed."
         )
 
-    # 2 executive summary
-    add(_sec(2, "Executive summary"))
-    acts = {v.action for v in verdicts}
-    add(
-        f"Across all five horizons the recommended action is "
-        f"**{' / '.join(sorted(a.value for a in acts))}**."
-    )
-    add(f"\n{verdicts[0].rationale}")
-    add(
-        f"\nPosition: **{pos.quantity} shares at ${pos.average_cost} average cost** "
-        f"(cost basis {_money(pos.cost_basis)}). Market value {_money(pos.market_value)}; "
-        f"unrealised "
-        f"{_money(pos.unrealized_pnl)}"
-        f"{f' ({pos.unrealized_pct:+.2%})' if pos.unrealized_pct is not None else ''}."
-    )
+    # ================================================== TIER 1 — snapshot
+    add(_tier("TIER 1 — DECISION SNAPSHOT"))
 
-    # 3-5 by horizon
-    add(_sec(3, "Action, directional view and confidence by horizon"))
-    add("| Horizon | 1. Security / directional view | 2. Portfolio action | Evidence strength |")
-    add("| --- | --- | --- | --- |")
+    add(_sec(1, "Decision snapshot"))
+    add(
+        f"**{pos.symbol}** {_money(pos.market_price)} · {pos.quantity} shares · "
+        f"**{fmt_pct(pos.market_weight)} of portfolio** · market value "
+        f"{_money(pos.market_value)} · unrealised {_money(pos.unrealized_pnl)}"
+        f"{f' ({pos.unrealized_pct:+.2%})' if pos.unrealized_pct is not None else ''} · "
+        f"average cost ${pos.average_cost}"
+    )
+    add("")
+    add("| Horizon | Security view | Portfolio action | Evidence groups | Strength |")
+    add("| --- | --- | --- | --- | --- |")
     for v in verdicts:
         add(
-            f"| {v.horizon} | {v.direction.value} | **{v.action.value}** | "
-            f"{v.confidence.value} (experimental) |"
+            f"| **{v.horizon}** | {v.direction.value} | **{v.action.value}** | "
+            f"{snapshot.breadth_cell(evidence, v)} | {v.confidence.value} (experimental) |"
         )
     add(
-        "\nColumn 1 is the view on the *security*. Column 2 is what to do about the "
-        "*position*. They are computed separately; portfolio weight cannot reach column 1."
+        "\n*Security view* is the assessment of the security; *portfolio action* is what "
+        "to do about the position. They are computed separately: portfolio weight cannot "
+        "reach the view. *Evidence groups* counts independent phenomenon groups, not raw "
+        "items - four momentum windows agreeing is one group, not four."
     )
-    add(f"\n*{DISCLOSURE}*")
 
-    # 6 position state
-    add(_sec(6, "Current position state"))
+    add(_sec(2, "Executive summary"))
+    for line in snapshot.horizon_structure(verdicts):
+        add(line)
+
+    add(_sec(3, "Core thesis"))
+    add(snapshot.core_thesis(pos, evidence, verdicts))
+
+    add(_sec(4, "Top support"))
+    sup = snapshot.support_bullets(evidence)
+    if sup:
+        for b in sup:
+            add(f"- {b}")
+    else:
+        add("*No item in this report carries a positive reading.*")
+
+    add(_sec(5, "Top concerns"))
+    con = snapshot.concern_bullets(evidence)
+    if con:
+        for b in con:
+            add(f"- {b}")
+    else:
+        add("*No item in this report carries a negative reading.*")
+
+    add(_sec(6, "Why the horizons differ"))
+    for line in snapshot.why_horizons_differ(verdicts):
+        add(line)
+
+    add(_sec(7, "Portfolio effect"))
+    add(snapshot.portfolio_effect(pos, constraints, verdicts))
+
+    add(_sec(8, "Next catalyst"))
+    add(snapshot.next_catalyst(evidence))
+
+    add(_sec(9, "Key risk"))
+    add(snapshot.key_risk(pos, evidence, verdicts))
+
+    add(_sec(10, "What would change the view"))
+    for c in snapshot.change_conditions(pos, evidence, verdicts, limit=3):
+        add(f"- {c}")
+    add("\n*Full per-horizon conditions are in the audit tier below.*")
+
+    # ================================== TIER 2 — supporting investment evidence
+    add(_tier("TIER 2 — SUPPORTING INVESTMENT EVIDENCE"))
+
+    add(_sec(11, "Why this action, by horizon"))
+    for v in verdicts:
+        add(f"\n**{v.horizon} — {v.action.value}.** {v.rationale}")
+        if v.contributing:
+            add(f"\n  Directional evidence considered: {'; '.join(v.contributing)}.")
+        if v.conflicts:
+            add(f"\n  Conflicts: {'; '.join(v.conflicts)}.")
+        add(f"\n  Confidence basis: {'; '.join(v.confidence_basis)}.")
+
+    add(_sec(12, "Current position state"))
     add("| Field | Value | Kind |")
     add("| --- | --- | --- |")
     add(f"| Quantity | {pos.quantity} | fact (broker export) |")
@@ -140,8 +186,7 @@ def render(
         f"of {pos.portfolio_positions} positions | calculation |"
     )
 
-    # 7 portfolio context
-    add(_sec(7, "Portfolio context"))
+    add(_sec(13, "Portfolio context"))
     add(
         f"Portfolio holds **{pos.portfolio_positions} positions**. This holding is "
         f"{f'{pos.cost_weight:.2%}' if pos.cost_weight is not None else 'an unavailable share'} "
@@ -152,9 +197,7 @@ def render(
         add(f"- {u}")
 
     add("\n**Portfolio concentration effect on the recommendation**\n")
-    v0 = verdicts[0]
-    sizing = v0.rationale.split("implies", 1)[-1]
-    add(sizing.split(".", 1)[-1].strip() if "." in sizing else sizing.strip())
+    add(portfolio_adjustment(pos, constraints)[1])
 
     pol = meta.get("policy") or {}
     if any(v.action.value == "ADD" for v in verdicts):
@@ -187,16 +230,18 @@ def render(
             "be detected, and concentration can only suppress ADD - never force TRIM."
         )
 
-    # 8-15 evidence by domain
+    # evidence by domain. An item is explained in prose ONCE per report; later
+    # sections list it in their table and point at the section that explains it.
+    explained: dict[str, int] = {}
     order = [
-        (8, "Market and regime context", "market/regime"),
-        (8.5, "Sector context", "sector"),
-        (9, "Company evidence", "company"),
-        (10, "Fundamental and earnings evidence", "fundamentals"),
-        (11, "Valuation evidence", "valuation"),
-        (12, "Catalyst evidence", "catalysts"),
-        (13, "Price and technical evidence", "price/technical"),
-        (14, "Historical evidence", "historical"),
+        (14, "Market and regime context", "market/regime"),
+        (15, "Sector context", "sector"),
+        (16, "Company evidence", "company"),
+        (17, "Fundamental and earnings evidence", "fundamentals"),
+        (18, "Valuation evidence", "valuation"),
+        (19, "Catalyst evidence", "catalysts"),
+        (20, "Price and technical evidence", "price/technical"),
+        (21, "Historical evidence", "historical"),
     ]
     for n, title, dom in order:
         add(_sec(n, title))
@@ -218,96 +263,120 @@ def render(
         add("| --- | --- | --- | --- | --- | --- |")
         for e in avail:
             add(
-                f"| `{e.name}` | {e.status.value} | {e.value} | {e.as_of} | "
+                f"| `{e.name}` | {e.status.value} | {_cell(e.value)} | {e.as_of} | "
                 f"{', '.join(e.horizons)} | {e.direction.value} |"
             )
-        for e in avail:
+
+        fresh = [e for e in avail if e.name not in explained]
+        repeats = [e for e in avail if e.name in explained]
+
+        # A limitations paragraph shared by several items in this section is
+        # printed once, naming the items it governs.
+        shared: dict[str, list[str]] = {}
+        for e in fresh:
+            shared.setdefault(e.limitations, []).append(e.name)
+        for e in fresh:
             add(f"\n- **`{e.name}`** — {e.explanation}")
-            add(f"  - *Limitations:* {e.limitations}")
+            if len(shared[e.limitations]) == 1:
+                add(f"  - *Limitations:* {e.limitations}")
+        for lim, names in shared.items():
+            if len(names) > 1:
+                add(f"\n*Limitations — applies to " f"{', '.join(f'`{x}`' for x in names)}:* {lim}")
+        for e in repeats:
+            add(f"\n- **`{e.name}`** — explained in section {explained[e.name]} above.")
+        for e in fresh:
+            explained[e.name] = n
+
         miss = [e for e in items if e.status is Status.UNAVAILABLE]
         if miss:
             add("\n**Unavailable in this domain:**\n")
             for e in miss:
                 add(f"- `{e.name}` — {e.missing_reason}")
 
-    # 15 analogues
-    add(_sec(15, "Historical analogues"))
+    add(_sec(22, "Historical analogues"))
     add(
         "**UNAVAILABLE.** The analogue engine is a SHADOW component excluded from the "
         "product decision path, and the Arm 2 readiness review established that its "
         "feature-consumer structure could not be validated. Not used."
     )
 
-    # 16 risk
-    add(_sec(16, "Risk factors"))
+    add(_sec(23, "Risk factors"))
     add("| Risk | Status | Note |")
     add("| --- | --- | --- |")
-    add("| Concentration | UNAVAILABLE | market-value weight not computable |")
-    add("| Liquidity | UNAVAILABLE | average daily volume not wired into this slice |")
-    add("| Event risk | UNAVAILABLE | no earnings or catalyst data |")
-    add(
-        "| Undisclosed exposure | **MATERIAL** | the broker export excludes listed options; "
-        "`data/unsupported_positions_2026-07-16.csv` records an AMZN call position that is "
-        "**not** represented here, so true exposure is understated |"
-    )
+    for name, status, note in snapshot.risk_rows(pos, evidence, verdicts):
+        add(f"| {name} | {status} | {_cell(note)} |")
 
-    # 17 constraints
-    add(_sec(17, "Deterministic constraints"))
+    # ============================================ TIER 3 — audit / methodology
+    add(_tier("TIER 3 — AUDIT AND METHODOLOGY"))
+
+    add(_sec(24, "Data freshness"))
+    add("| Field | Value |")
+    add("| --- | --- |")
+    add(f"| AS-OF DATE | {pos.as_of.isoformat()} |")
+    add(f"| LATEST SECURITY PRICE | {pos.price_date or 'unavailable'} |")
+    add(f"| LATEST FEATURE / OBSERVED DATA | {meta.get('feature_date', 'unavailable')} |")
+    add(f"| DATA AGE | {'unavailable' if _age is None else f'{_age} calendar day(s)'} |")
+    _fresh = (
+        "UNKNOWN"
+        if _age is None
+        else (
+            "CURRENT"
+            if _age <= 1
+            else (
+                "STALE - 1W reading is weakened"
+                if _age <= 4
+                else "BLOCKING - 1W evidence is too old to support a 1-week view"
+            )
+        )
+    )
+    add(f"| FRESHNESS STATUS | **{_fresh}** |")
+
+    add(_sec(25, "Deterministic constraints"))
     add("| Constraint | Status | Observed | Threshold | Reason |")
     add("| --- | --- | --- | --- | --- |")
     for c in constraints:
-        add(f"| {c.name} | **{c.status.value}** | {c.observed} | {c.threshold} | {c.reason} |")
+        add(
+            f"| {c.name} | **{c.status.value}** | {_cell(c.observed)} | "
+            f"{_cell(c.threshold)} | {_cell(c.reason)} |"
+        )
 
-    # 18-19 why / why not
-    add(_sec(18, "Why this action"))
+    # Identical elimination sets are printed once, naming the horizons they cover.
+    add(_sec(26, "Why not the alternative actions"))
+    groups: dict[tuple[tuple[str, str], ...], list[str]] = {}
     for v in verdicts:
-        add(f"\n**{v.horizon} — {v.action.value}.** {v.rationale}")
-        if v.contributing:
-            add(f"\n  Directional evidence considered: {'; '.join(v.contributing)}.")
-        if v.conflicts:
-            add(f"\n  Conflicts: {'; '.join(v.conflicts)}.")
-        add(f"\n  Confidence basis: {'; '.join(v.confidence_basis)}.")
-
-    add(_sec(19, "Why not the alternative actions"))
-    for v in verdicts:
-        add(f"\n**{v.horizon}**\n")
-        for act, why in v.eliminations:
+        groups.setdefault(tuple(v.eliminations), []).append(v.horizon)
+    for elims, hs in groups.items():
+        add(f"\n**{', '.join(hs)}**\n")
+        for act, why in elims:
             add(f"- **{act} rejected** — {why}")
 
-    # 20 what would change it
-    add(_sec(20, "What would change this recommendation"))
+    add(_sec(27, "What would change this recommendation"))
     add(
-        "1. **A PolicyArtifact with position limits.** This is the single largest gap. "
-        "With a target weight and a hard cap, concentration becomes evaluable and the "
-        "action can move off ABSTAIN."
+        "Conditions below are read off the rules this report already applies. "
+        "No new signal and no new threshold is introduced.\n"
     )
+    for c in snapshot.change_conditions(pos, evidence, verdicts):
+        add(f"- {c}")
     add(
-        "2. **Tax lots with acquisition dates.** Without them the cost of trimming is "
-        "unknown, so TRIM cannot be justified even if a constraint were breached."
-    )
-    add(
-        "3. **Prices for every held position**, making total portfolio market value and "
-        "therefore true market-value weight computable."
-    )
-    add(
-        "4. **Options exposure represented in the schema**, so the AMZN call is included "
-        "in exposure rather than silently excluded."
-    )
-    add(
-        "5. **Point-in-time fundamentals**, which would activate the valuation, earnings "
-        "and fundamentals sections."
+        "\n**Structural gaps that would widen what this report can say:** a policy "
+        "artifact with position limits (making concentration evaluable and a hard-cap "
+        "breach detectable); tax lots with acquisition dates (making the cost of "
+        "trimming computable); listed options represented in the schema; and a "
+        "point-in-time fundamentals history, which would let valuation be compared "
+        "with the security's own past rather than only with peers."
     )
 
-    # 21 missing
-    add(_sec(21, "Missing evidence"))
-    add("| Item | Domain | Why unavailable |")
-    add("| --- | --- | --- |")
-    for e in evidence:
-        if e.status is Status.UNAVAILABLE:
-            add(f"| `{e.name}` | {e.domain} | {e.missing_reason} |")
+    add(_sec(28, "Missing evidence"))
+    missing_rows = [e for e in evidence if e.status is Status.UNAVAILABLE]
+    if not missing_rows:
+        add("*Every evidence item this slice implements produced a value for this holding.*")
+    else:
+        add("| Item | Domain | Why unavailable |")
+        add("| --- | --- | --- |")
+        for e in missing_rows:
+            add(f"| `{e.name}` | {e.domain} | {_cell(e.missing_reason)} |")
 
-    # 22 status disclosure
-    add(_sec(22, "Evidence-status disclosure"))
+    add(_sec(29, "Evidence-status disclosure"))
     counts = {s.value: sum(1 for e in evidence if e.status is s) for s in Status}
     add("| Status | Count | Meaning |")
     add("| --- | --- | --- |")
@@ -330,8 +399,7 @@ def render(
         "question unresolved and underpowered."
     )
 
-    # 23 limitations
-    add(_sec(23, "Limitations"))
+    add(_sec(30, "Limitations"))
     add("- Every directional reading is **EXPERIMENTAL**. None is a forecast.")
     add(
         "- Historical distributions are this symbol's **own** history, conditioned on its "
