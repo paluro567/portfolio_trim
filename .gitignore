@@ -2,6 +2,16 @@
 data/reports/
 data/validation/
 
+# Generated product decision reports (`mip product report|portfolio`). Kept on
+# disk for research and frozen historical review; not tracked.
+# The 2026-07-16 AMZN cohort is deliberately re-included: five tests read it as
+# a committed fixture (tests/unit/test_product_slice.py REPORT/INPUTS and
+# tests/unit/test_product_policy.py::test_policy_provenance_reaches_the_report_bundle).
+# The trailing `/*` matters - excluding the directory itself would make the
+# negation below unreachable, because git does not descend into an excluded dir.
+data/product_reports/*
+!data/product_reports/2026-07-16/
+
 # Build artifacts and regenerable ingestion cache (V6 closure)
 __pycache__/
 *.pyc
