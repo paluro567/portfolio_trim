@@ -21,7 +21,12 @@ from mip.product.slice import evaluate_constraints, gather_evidence, load_positi
 
 app = typer.Typer(help="Product decision-support reports (descriptive; no predictive claims).")
 
-DEFAULT_BALANCES = Path("data/peter_real_opening_balances_2026-07-16.csv")
+# The MUTABLE current holdings source, read on every run. It is not an opening
+# balance and not a dated artifact: edit it when a position changes. Dated files
+# under data/ and the report cohorts under data/product_reports/<date>/ are the
+# immutable historical record and must not be edited in its place.
+# Override per run with --balances.
+DEFAULT_BALANCES = Path("data/current_holdings.csv")
 
 
 @app.command("report")
