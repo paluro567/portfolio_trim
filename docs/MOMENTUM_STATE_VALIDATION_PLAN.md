@@ -7,8 +7,17 @@ plan and the verdict are versioned here; the generated artifacts
 
 ## Status
 
-**REJECTED — 2026-08-18.** Research-only. Never promoted, never wired into
-`mip/product/`.
+**CLOSED, HYPOTHESIS UNSUPPORTED — 2026-08-18; inference corrected 2026-08-19.**
+Research-only. Never promoted, never wired into `mip/product/`.
+
+The pre-registered promotion gates were not met, so the hypothesis is unsupported
+and the experiment is closed. It is *not* classified as evidence of harm: the
+original significance claim rested on an invalid confidence interval (see
+*Verdict*). In the repository's `LifecycleStatus` vocabulary the nearest state
+remains `REJECTED` — meaning "not promoted, do not use" — but the scientific
+reading is **failure to demonstrate improvement**, not demonstrated degradation.
+momentum_state_v1 has no registry entry (the registry requires an
+`IntelligenceModel` subclass and this study is a bucket test, not a model).
 
 ## Pre-registration
 
@@ -36,19 +45,60 @@ were seen.
 
 ## Verdict
 
-| Horizon | regime-only | momentum+regime | Δ | 95% CI | gate |
+> **INFERENCE CORRECTION, 2026-08-19.** The confidence intervals below were
+> produced by a bootstrap whose resampling unit did not match the dependence
+> structure of the data (see *Dependence defect* immediately after this table).
+> **They are not valid dependence-adjusted intervals and must not be used to
+> support any significance claim.** The point estimates are unaffected. No
+> replacement interval is quoted, because none has been computed by a
+> dependence-aware procedure. The experiment remains closed and is not being
+> retuned or rerun.
+
+| Horizon | regime-only | momentum+regime | Δ (point estimate) | originally-reported CI — **INVALID** | gate |
 |---|---|---|---|---|---|
-| 1w | 0.5114 | 0.4930 | −0.0182 | [−0.0202, −0.0161] | fail |
-| **1m** | 0.4869 | 0.4834 | **−0.0034** | **[−0.0048, −0.0020]** | **FAIL** |
+| 1w | 0.5114 | 0.4930 | −0.0182 | ~~[−0.0202, −0.0161]~~ | not met |
+| **1m** | 0.4869 | 0.4834 | **−0.0034** | ~~[−0.0048, −0.0020]~~ | **not met** |
 
-The incremental CI lies entirely **below** zero: conditioning momentum on market
-regime measurably *degrades* forward excess-return direction. Per-symbol median
-delta −0.0045 with only 44.7% of 441 symbols positive. Confidence inverted at 1w.
-PIT clean: **0 leakage violations** over 1,658,463 observations, plus a
-price-poisoning invariance test.
+What remains valid: the **point estimates** (sample means, unbiased regardless of
+dependence) — momentum+regime did not score above regime-only at either horizon,
+and every system scored at or below 0.50. Per-symbol median delta −0.0045 with
+44.7% of 441 symbols positive (descriptive; no interval attached). Confidence
+inverted at 1w. PIT clean: **0 leakage violations** over 1,658,463 observations,
+plus a price-poisoning invariance test — structural checks unaffected by the
+dependence defect.
 
-Ablation E (`ret_63d`) is the only positive incremental (+0.0139, CI
-[+0.0124, +0.0154]) and is explicitly **not** promoted: it is a robustness
+What is **no longer claimed**: that conditioning *significantly degrades*
+forecasting. The observed difference is negative, but its uncertainty was never
+validly quantified, so the experiment cannot distinguish a small true
+degradation from no effect at all.
+
+The pre-registered promotion gate required a CI lower bound above zero. That gate
+is **not met** — it cannot be met, since no valid interval exists. The hypothesis
+is therefore **unsupported and not promoted**. This is not evidence that the
+hypothesis is true.
+
+### Dependence defect in the original bootstrap
+
+`paired_delta_bootstrap` sorted the paired cohort by date into a flat array of
+symbol-date rows, then resampled circular blocks of **4 consecutive rows**. The
+1m holdout held **492,031 rows across 1,158 trading dates — about 425 rows per
+date**, so a 4-row block spanned roughly **0.94% of a single trading date**. It
+therefore preserved:
+
+- **cross-sectional same-date dependence:** no. ~425 same-date rows share one
+  market/macro realisation; a 4-row block captures 4 of them.
+- **overlapping-outcome serial dependence:** no. The 1m label spans 21 sessions,
+  so observations up to 20 dates apart share outcome windows; blocks under one
+  date span none of that.
+
+Both dominant dependence structures were absent from the resampling, so the
+interval reflects little more than binomial noise on a pseudo-replicated sample.
+The defect is in the *inference*, not in the data, the labels, the PIT handling
+or the point estimates.
+
+Ablation E (`ret_63d`) is the only positive incremental (+0.0139; its interval
+came from the same defective bootstrap and is likewise **invalid**) and is
+explicitly **not** promoted: it is a robustness
 ablation rather than the primary, its accuracy is 0.5007, and its confidence is
 severely inverted (0.5005 high vs 0.6342 low), an independent pre-registered
 disqualifier. Acting on it would be the specification search the freeze prevents.
@@ -66,7 +116,9 @@ favour of a date-clustered bootstrap.
 
 ## Relationship to prior work
 
-This is the third independent negative on the same premise. `historical_analogues`
+This is the third experiment on the same premise to fail its promotion gates
+(the first two, analogue v1 and CPE v1, are separate rejections on their own
+evidence). `historical_analogues`
 v1 (REJECTED) found the company domain harmful and the market domain to be era
 persistence. `conditional_probability` v1 (REJECTED) found standalone accuracy
 falling monotonically as conditioning domains were added (0.641 market-only →

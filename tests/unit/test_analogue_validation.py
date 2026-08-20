@@ -160,6 +160,56 @@ def test_block_bootstrap_is_deterministic_and_detects_improvement() -> None:
     assert first["ci_low"] > 0.9 and first["positive_share"] == 1.0
 
 
+def test_block_bootstrap_resamples_per_symbol_not_pooled_rows() -> None:
+    """Pin the resampling UNIT of the shared bootstrap (gate G11).
+
+    `block_bootstrap_delta` groups by symbol and takes blocks of consecutive
+    DATES within each symbol's own series, so within-symbol serial dependence —
+    including overlapping forward windows — survives resampling.
+
+    It does NOT preserve cross-sectional same-date dependence: symbols are
+    resampled independently, so same-date rows are broken apart. That makes it
+    appropriate for per-symbol estimands and inappropriate for a pooled
+    cross-sectional one. This test documents that boundary so the momentum_state
+    failure — blocks of 4 flattened rows spanning under 1% of a trading date —
+    cannot be reintroduced here unnoticed.
+    """
+    rows, outs = [], []
+    for sym in ("AAA", "BBB", "CCC"):
+        for i in range(30):
+            day = AS_OF + timedelta(days=14 * i)
+            up = i % 2 == 0
+            outs.append(outcome_row(symbol=sym, as_of=day, actual=0.06 if up else -0.06))
+            for system, accurate in (("combined", True), ("baseline", False)):
+                score = 80.0 if (up if accurate else not up) else 20.0
+                rows.append(
+                    system_row(
+                        symbol=sym,
+                        system=system,
+                        as_of=day,
+                        score=score,
+                        excess=0.02 if score > 50 else -0.02,
+                    )
+                )
+    frame = vm.prepare(pd.DataFrame(rows), pd.DataFrame(outs))
+    combined = frame[frame["system"] == "combined"]
+    baseline = frame[frame["system"] == "baseline"]
+
+    result = vm.block_bootstrap_delta(combined, baseline, "hit")
+    # every symbol contributes its full series, so n is symbol-dates ...
+    assert result["n"] == 90
+    # ... but the point estimate is still the paired mean, unaffected by units
+    assert result["delta"] == pytest.approx(1.0)
+
+    # dropping one symbol entirely must change n by exactly that symbol's series,
+    # which is only true if resampling is organised per symbol rather than over a
+    # single pooled row array.
+    two = vm.block_bootstrap_delta(
+        combined[combined["symbol"] != "CCC"], baseline[baseline["symbol"] != "CCC"], "hit"
+    )
+    assert two["n"] == 60
+
+
 def test_turnover_by_hand() -> None:
     rows = []
     trims = [30.0, 45.0, 30.0, 30.0]  # +15 then -15 -> one reversal

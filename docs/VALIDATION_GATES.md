@@ -68,6 +68,42 @@ When a signal may be regime persistence in disguise (identical inputs
 across symbols, slow-moving features), report era-blocked results and an
 effective sample size that accounts for cross-symbol duplication.
 
+## G11 — Resampling unit must match the estimand and the dependence structure
+In a panel experiment, **symbol-date rows are not independent observations**, and
+an interval computed as if they were is not a confidence interval. Before quoting
+any interval, state the resampling unit and justify it against three facts:
+
+1. **Market and macro variables vary by DATE, not by security.** When 400 stocks
+   are observed under one macro state, that is one realisation of the macro
+   environment, not 400. Conditioning on a date-level variable is a split-plot
+   design: its main effect is limited by the number of independent date episodes,
+   however many securities are present.
+2. **Securities on the same date share common shocks.** Measured here on
+   21-session returns: mean pairwise correlation is 0.26 for raw returns
+   (~4 effective securities out of 437) and 0.05 for SPY-excess returns
+   (~19 effective). De-marketing the target buys roughly 5x independence and is
+   usually worth doing for that reason alone.
+3. **Overlapping forward windows create serial dependence.** An h-session label
+   means observations up to h-1 dates apart share outcome path.
+
+**Blocks must be counted in dates, not in flattened rows.** The concrete failure
+mode, recorded because it happened: momentum_state_v1 sorted its paired cohort by
+date into one array and resampled blocks of 4 *rows*. With ~425 rows per date a
+block covered under 1% of a single date, preserving neither dependence structure,
+and produced an interval reflecting little more than binomial noise. See
+`docs/MOMENTUM_STATE_VALIDATION_PLAN.md`.
+
+Acceptable units, in rough order of preference: resample whole dates (or
+contiguous date blocks spanning at least the horizon); resample per-symbol series
+with blocks of dates (what `mip.validation.metrics.block_bootstrap_delta` does —
+it preserves within-symbol serial dependence but **not** cross-sectional same-date
+dependence, so it is appropriate for per-symbol estimands and not for pooled
+cross-sectional ones); or reduce each date to a scalar contrast and resample those.
+
+**Report effective sample size next to every interval.** A raw n that exceeds the
+effective n by two or three orders of magnitude makes an underpowered result look
+decisive — and would make a spurious one look significant.
+
 ## Promotion discipline
 Promotion criteria must be declared BEFORE the evaluation runs (see the
 analogue v1 validation's pre-declared criteria). Tuning on the final
