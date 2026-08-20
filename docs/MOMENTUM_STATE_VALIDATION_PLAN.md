@@ -119,8 +119,11 @@ favour of a date-clustered bootstrap.
 This is the third experiment on the same premise to fail its promotion gates
 (the first two, analogue v1 and CPE v1, are separate rejections on their own
 evidence). `historical_analogues`
-v1 (REJECTED) found the company domain harmful and the market domain to be era
-persistence. `conditional_probability` v1 (REJECTED) found standalone accuracy
+v1 (REJECTED) found the market domain to be era persistence, and found **no
+incremental benefit from company similarity** — its variant ablation carried only
+~24 observations per variant with no interval, so the earlier wording ("company
+domain harmful") overstated what that evidence supports.
+`conditional_probability` v1 (REJECTED) found standalone accuracy
 falling monotonically as conditioning domains were added (0.641 market-only →
 0.545 market+sector+company). This study reproduces that direction with a
 deliberately low-dimensional, fully interpretable specification on the deepest

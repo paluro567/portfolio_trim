@@ -296,13 +296,26 @@ _ANALOGUE = ExperimentSpec(
     report_reference="data/validation/analogue_v1/",
     ablation_dimensions=("market", "sector", "company", "catalyst"),
     notes=(
-        "Walk-forward + embargoed revalidation: below coin-flip at <=1m, long-horizon promise "
-        "was leakage, confidence inverted; company domain harmful, market domain = era "
-        "persistence. Demoted to shadow; not promotable."
+        "Walk-forward + embargoed revalidation. REJECTED on raw out-of-sample performance and "
+        "prior leakage: analogue-only directional accuracy is below coin flip at <=2w "
+        "(1w 0.4535, 2w 0.4603 embargoed) and the long-horizon promise was lookahead leakage "
+        "(3m 0.5079 -> 0.3548, 6m 0.6429 -> 0.4444, 1y 0.6429 -> 0.3077 once embargoed). "
+        "Market domain = era persistence. Demoted to shadow; not promotable. "
+        "CORRECTION 2026-08-19: the confidence-inversion finding was recorded from the "
+        "ORIGINAL leakage-contaminated run (high 0.4660 vs low 0.5587) and does NOT survive "
+        "the embargoed PIT-clean revalidation (high 0.4601 vs low 0.4097 - not inverted). "
+        "That claim is withdrawn. It does not make the confidence mechanism promotable: both "
+        "buckets remain below 0.50, so confidence separates two losing populations. The "
+        "rejection never depended on it. Company similarity: no incremental benefit "
+        "demonstrated - the variant ablation carried only ~24 observations per variant and "
+        "no interval, so 'harmful' was overstated; CPE independently showed lower raw "
+        "accuracy as company conditioning was added, which together support excluding the "
+        "domain without claiming demonstrated harm."
     ),
     limitations=(
-        "Cross-sectional era persistence; inverted confidence; not independent of "
-        "the regime models."
+        "Cross-sectional era persistence; not independent of the regime models. Confidence "
+        "is not usable (both quartiles below coin flip) though not demonstrably inverted "
+        "once leakage is removed. Ablation evidence is small-sample (~24 per variant)."
     ),
 )
 
