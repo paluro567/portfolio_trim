@@ -67,6 +67,31 @@ class Directionality(StrEnum):
     UNCLEAR = "UNCLEAR"
 
 
+class SetupLabel(StrEnum):
+    """Compact description of the setup at one horizon. Ordinal, not numeric."""
+
+    BULLISH = "BULLISH"
+    CONSTRUCTIVE = "CONSTRUCTIVE"
+    MIXED = "MIXED"
+    CAUTIOUS = "CAUTIOUS"
+    DETERIORATING = "DETERIORATING"
+
+
+class ResearchBias(StrEnum):
+    """Which way research leans, GIVEN the deterministic action.
+
+    This is an interpretation layered on top of the action, never a replacement
+    for it. ``ADD_BIASED`` + a deterministic ``HOLD`` renders as
+    "ADD-BIASED HOLD": the position is attractive but something — usually
+    sizing — blocks a clean ADD.
+    """
+
+    ADD_BIASED = "ADD_BIASED"
+    NEUTRAL = "NEUTRAL"
+    TRIM_BIASED = "TRIM_BIASED"
+    EXIT_BIASED = "EXIT_BIASED"
+
+
 class CatalystType(StrEnum):
     EARNINGS = "EARNINGS"
     GUIDANCE_UPDATE = "GUIDANCE_UPDATE"
@@ -237,10 +262,70 @@ class IntegratedView(_Strict):
     uncertainty_explanation: str
 
 
+class HorizonResearchView(_Strict):
+    """The research reading for ONE horizon.
+
+    Deliberately separate from the deterministic verdict. The platform owns
+    `security_view` and `action`; this object carries only the qualitative
+    interpretation of them, and `research_bias` is an INTERPRETATION that never
+    changes the action. A renderer may show "ADD-BIASED HOLD", but the trailing
+    action word is always the deterministic one.
+    """
+
+    horizon: str = Field(description="Exactly one of: 1w, 1m, 3m, 6m, 1y.")
+    setup: SetupLabel
+    research_bias: ResearchBias = Field(
+        description=(
+            "Whether research leans toward adding or reducing AT THIS HORIZON, "
+            "given the deterministic action. NEUTRAL when it simply agrees. This "
+            "never overrides the platform's action."
+        )
+    )
+    conviction: QualitativeLikelihood = Field(
+        description=(
+            "Qualitative conviction in this horizon's reading. Consider quant/"
+            "qualitative agreement, source quality, catalyst uncertainty, "
+            "contradiction level and data freshness. NOT a forecast probability."
+        )
+    )
+    rationale: str = Field(description="One to three sentences. No preamble.")
+    primary_positive_driver: str = Field(description="Short phrase.")
+    primary_negative_driver: str = Field(description="Short phrase.")
+    what_changes_it: str = Field(
+        description="The single most likely thing that would change this horizon's view."
+    )
+
+
+class HorizonDifferences(_Strict):
+    """Why the five horizons do not say the same thing."""
+
+    short_term_drivers: str = Field(description="What governs 1w-1m. One or two sentences.")
+    medium_term_drivers: str = Field(description="What governs 3m-6m.")
+    long_term_drivers: str = Field(description="What governs 1y.")
+    why_they_diverge: str = Field(
+        description=(
+            "Plain English: why the horizons disagree here, or why they agree. "
+            "Name the actual mechanism, not a generic statement about horizons."
+        )
+    )
+
+
 class InvestmentResearchResult(_Strict):
     """The full structured research object returned by the extraction call."""
 
     symbol: str
+    decision_summary: str = Field(
+        description=(
+            "ONE compact paragraph an investor could read alone: the action across "
+            "horizons, where the setup is strongest and weakest, whether HOLD is "
+            "driven by the security thesis or by position sizing, and the single "
+            "key issue. Around 50-80 words."
+        )
+    )
+    horizon_views: list[HorizonResearchView] = Field(
+        description="Exactly five entries, one per horizon, in order: 1w, 1m, 3m, 6m, 1y."
+    )
+    horizon_differences: HorizonDifferences
     company_summary: str
     what_matters_now: list[str] = Field(description="At most five bullets.")
     current_setup: CurrentSetup

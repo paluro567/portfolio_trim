@@ -21,13 +21,17 @@ from mip.research_assistant.contracts import (
     CurrentSetup,
     Directionality,
     EarningsAnalysis,
+    HorizonDifferences,
+    HorizonResearchView,
     IntegratedView,
     InvestmentResearchResult,
     LikelihoodType,
     PriceActionAnalysis,
     QualitativeLikelihood,
     QuantVsQual,
+    ResearchBias,
     Scenario,
+    SetupLabel,
     ThesisChanges,
     WatchItem,
 )
@@ -80,6 +84,28 @@ def scenario(thesis: str = "base thesis", likelihood=QualitativeLikelihood.MODER
     )
 
 
+def horizon_views(
+    biases: dict[str, ResearchBias] | None = None,
+    setups: dict[str, SetupLabel] | None = None,
+) -> list[HorizonResearchView]:
+    """Five per-horizon views, one per horizon, distinct by default."""
+    biases = biases or {}
+    setups = setups or {}
+    return [
+        HorizonResearchView(
+            horizon=hz,
+            setup=setups.get(hz, SetupLabel.MIXED),
+            research_bias=biases.get(hz, ResearchBias.NEUTRAL),
+            conviction=QualitativeLikelihood.MODERATE,
+            rationale=f"{hz} rationale sentence.",
+            primary_positive_driver=f"{hz} positive driver",
+            primary_negative_driver=f"{hz} negative driver",
+            what_changes_it=f"{hz} would change on this",
+        )
+        for hz in ALL_H
+    ]
+
+
 def make_result(
     symbol: str = "TEST",
     *,
@@ -89,9 +115,25 @@ def make_result(
     watch_items: list[WatchItem] | None = None,
     risk_factors: list[Claim] | None = None,
     extra_claim: Claim | None = None,
+    views: list[HorizonResearchView] | None = None,
+    decision_summary: str = (
+        "TEST is a HOLD across all horizons. The setup is most constructive at 6m-1y "
+        "while intermediate momentum is mixed, and position size rather than the "
+        "security thesis is what prevents an ADD."
+    ),
 ) -> InvestmentResearchResult:
     return InvestmentResearchResult(
         symbol=symbol,
+        decision_summary=decision_summary,
+        horizon_views=views if views is not None else horizon_views(),
+        horizon_differences=HorizonDifferences(
+            short_term_drivers="Momentum and event proximity dominate.",
+            medium_term_drivers="Earnings trend and guidance dominate.",
+            long_term_drivers="Company quality and valuation dominate.",
+            why_they_diverge=(
+                "Short-horizon price evidence conflicts with the longer business case."
+            ),
+        ),
         company_summary="A company that does things.",
         what_matters_now=["earnings in two weeks", "margin trend"],
         current_setup=CurrentSetup(

@@ -24,5 +24,5 @@ __all__ = ["ResearchSettings", "load_research_settings"]
 
 # Bumped whenever the prompt text or the response schema changes in a way that
 # invalidates cached research. Both are recorded in every persisted artifact.
-PROMPT_VERSION = "1.0.0"
-SCHEMA_VERSION = "1.0.0"
+PROMPT_VERSION = "1.1.1"
+SCHEMA_VERSION = "1.1.0"

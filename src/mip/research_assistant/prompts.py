@@ -139,7 +139,9 @@ aggregators, or unattributed social-media claims.
 Anchor everything to the AS-OF DATE you are given. Information published after
 that date is out of scope; if you encounter it, say so rather than using it.
 
-Finish with a section headed "SYNTHESIS" that answers, plainly:
+Finish with TWO sections.
+
+First, "SYNTHESIS", answering plainly:
   - what the quantitative setup says
   - what current company research says
   - what the market environment says
@@ -147,6 +149,20 @@ Finish with a section headed "SYNTHESIS" that answers, plainly:
   - where they conflict
   - what matters most right now
   - what would change the conclusion
+
+Second, "BY HORIZON". The platform scores five horizons - 1w, 1m, 3m, 6m, 1y -
+and its deterministic verdicts are in the payload. For EACH horizon write two or
+three sentences covering: how the setup reads at that horizon, the single
+strongest positive and the single strongest negative, and the one thing most
+likely to change it. Then state, in plain English, WHY the horizons differ from
+each other - or why they do not.
+
+Be concrete about the mechanism. Short horizons are typically governed by
+momentum, relative strength, event proximity, volatility and rates; medium
+horizons by earnings trend, guidance, business inflection and sector strength;
+long horizons by company quality, valuation, the business thesis, secular growth
+and capital allocation. Say which of these is actually doing the work here
+rather than reciting the categories.
 """
 
 
@@ -179,6 +195,26 @@ not support a field, leave it empty or null rather than inventing content.
 {_NUMERIC_AUTHORITY}
 
 FIELD GUIDANCE:
+  - decision_summary: ONE paragraph, roughly 50-80 words, that a busy investor
+    could read alone. Say what the action is across horizons, where the setup is
+    strongest and weakest, whether HOLD is driven by the security thesis or by
+    position sizing, and the single key issue. No preamble, no hedging filler.
+  - horizon_views: EXACTLY FIVE entries, in order 1w, 1m, 3m, 6m, 1y, using the
+    "BY HORIZON" part of the write-up. For each: `setup` is the compact label;
+    `research_bias` says which way research leans GIVEN the platform's
+    deterministic action - use ADD_BIASED when the security case is good but
+    something (usually position size) argues against adding, TRIM_BIASED when
+    the case is weakening, NEUTRAL when research simply agrees with the action.
+    `rationale` is one to three sentences and must NOT merely restate the
+    action. `primary_positive_driver` and `primary_negative_driver` are short
+    phrases naming the actual driver at THAT horizon - they should differ across
+    horizons where the evidence differs. `conviction` reflects quant/qualitative
+    agreement, source quality, catalyst uncertainty and data freshness.
+    Do not make five identical rows: if the horizons genuinely agree, say so in
+    the rationale and vary the drivers to show what each horizon rests on.
+  - horizon_differences: name the real mechanism. If short-horizon evidence is
+    conflicted while the long-horizon business case is constructive, say that
+    and say why. Avoid generic statements true of any stock.
   - what_matters_now: at most five bullets, the things that would actually
     change a decision this week.
   - price_action_analysis: keep verified_drivers, likely_drivers and
@@ -200,6 +236,21 @@ FIELD GUIDANCE:
   - cited_source_ids: every catalogue ID referenced anywhere in the object.
   - limitations: what you could not establish, and what a reader should not
     conclude from this research.
+
+CITATIONS — READ THIS LAST, AND APPLY IT EVERYWHERE.
+The write-up you are converting was produced with live web search, and the
+source catalogue lists what was actually retrieved. Populate `source_ids` on
+EVERY claim that the write-up supports with a source. This is not optional
+polish: an uncited FACT is automatically downgraded to UNVERIFIED and reaches
+the reader marked as unsupported, which is worse than useless to someone
+deciding with real money.
+
+Work through the catalogue and attach IDs claim by claim. A claim may carry
+several IDs. If the write-up genuinely does not rest a statement on a retrieved
+source, mark it INFERENCE or MODEL_JUDGMENT rather than leaving a FACT bare.
+Aim to cite the large majority of factual claims; a result in which only a
+handful of claims carry IDs means you have under-cited, not that the sources
+were absent.
 """
 
 
