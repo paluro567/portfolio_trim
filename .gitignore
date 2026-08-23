@@ -16,3 +16,16 @@ data/product_reports/*
 __pycache__/
 *.pyc
 RawData/
+
+# Secrets — real environment values. `.env.example` (placeholders only) IS tracked.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets.yaml
+secrets.yml
+
+# Generated live research artifacts (`mip product research`). Contain third-party
+# article titles/URLs and model output; regenerable and not part of the source tree.
+data/investment_research/
