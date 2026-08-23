@@ -58,6 +58,28 @@ def stub_gather(monkeypatch, tmp_path):
         )
 
     monkeypatch.setattr(product_cli, "_gather", _gather)
+
+    # The calibration gate queries the database, which these tests do not have.
+    # Stub it to the state the real gate currently reports: blocked, with a
+    # reason, so the CLI path under test is the one that actually runs today.
+    def _calibration_context(_session):
+        from mip.calibration.lookup import CalibrationLookup
+        from mip.calibration.readiness import Check, ReadinessReport
+
+        report = ReadinessReport(
+            checks=[
+                Check(
+                    name="survivorship_control",
+                    passed=False,
+                    observed="0 delisted",
+                    requirement="delisted securities present",
+                    blocker="survivor-only universe",
+                )
+            ]
+        )
+        return CalibrationLookup.unavailable_because(report.reason()), report
+
+    monkeypatch.setattr(product_cli, "_calibration_context", _calibration_context)
     return tmp_path
 
 

@@ -37,6 +37,7 @@ from mip.research_assistant.contracts import (
     ResearchBias,
     Scenario,
 )
+from mip.research_assistant.integrated import IntegratedHorizon, build_integrated_horizons
 from mip.research_assistant.research import ResearchOutcome
 from mip.research_assistant.sources import _QUALITY_RANK, SourceCatalogue
 
@@ -55,13 +56,6 @@ _CLAIM_MARK = {
     ClaimType.MODEL_JUDGMENT: " _(judgment)_",
     ClaimType.HISTORICAL_STATISTIC: " _(historical stat)_",
     ClaimType.UNVERIFIED: " **_(unverified)_**",
-}
-
-_BIAS_PREFIX = {
-    ResearchBias.ADD_BIASED: "ADD-BIASED ",
-    ResearchBias.TRIM_BIASED: "TRIM-BIASED ",
-    ResearchBias.EXIT_BIASED: "EXIT-BIASED ",
-    ResearchBias.NEUTRAL: "",
 }
 
 
@@ -123,12 +117,68 @@ def _short(v: Any, words: int) -> str:
 def _action_label(action: str, bias: ResearchBias | None) -> str:
     """Composite display label. ALWAYS ends with the deterministic action word.
 
-    The bias annotation is only meaningful on a HOLD: an ADD that research also
-    likes does not need to be called an "ADD-BIASED ADD".
+    Thin alias over ``integrated.display_action`` so the label rule lives in
+    exactly one place — the integrated layer — and the renderer cannot drift
+    from it.
     """
-    if bias is None or action != "HOLD":
-        return action
-    return f"{_BIAS_PREFIX[bias]}{action}"
+    from mip.research_assistant.integrated import display_action
+
+    return display_action(action, bias)
+
+
+def _historical_cell(cell: IntegratedHorizon | None) -> str:
+    """The historical-evidence cell.
+
+    Shows figures only when the calibration is presentable. An unavailable or
+    rejected calibration says so in words, because a blank cell reads as "no
+    result" when the truth is "we are not entitled to a result".
+    """
+    if cell is None:
+        return "unavailable"
+    hist = cell.historical
+    status = hist.get("validation_status")
+    if status == "UNAVAILABLE":
+        return "unavailable"
+    if status == "REJECTED":
+        return "REJECTED"
+    bits = []
+    if hist.get("positive_return_rate") is not None:
+        bits.append(f"{hist['positive_return_rate']:.0%} positive")
+    if hist.get("spy_outperformance_rate") is not None:
+        bits.append(f"{hist['spy_outperformance_rate']:.0%} beat SPY")
+    if hist.get("median_forward_return") is not None:
+        bits.append(f"median {hist['median_forward_return']:+.1%}")
+    if hist.get("sample_n") is not None:
+        bits.append(f"N={hist['sample_n']:,}")
+    if not bits:
+        return str(status or "unavailable")
+    return " · ".join(bits) + f"<br>_{status}_"
+
+
+def _historical_note(integrated: list[IntegratedHorizon]) -> str:
+    """One honest paragraph about the historical channel's standing."""
+    reasons = {
+        (h.historical.get("unavailable_reason") or "")
+        for h in integrated
+        if h.historical.get("validation_status") == "UNAVAILABLE"
+    }
+    reasons.discard("")
+    if not reasons:
+        return (
+            "Historical evidence below is an empirical frequency over past occurrences of "
+            "the same deterministic state. It is not a forecast and not a probability."
+        )
+    # The full blocker list belongs in the readiness audit, not in a decision
+    # brief; two reasons carry the point and the rest is one link away.
+    ordered = sorted(reasons, key=len)
+    headline = "; ".join(ordered[:2])
+    more = f" (+{len(ordered) - 2} further blockers)" if len(ordered) > 2 else ""
+    return (
+        "**Historical evidence is unavailable at every horizon.** No forward-outcome "
+        f"calibration has been produced: {headline}{more}. Nothing is shown in its place — "
+        "a fabricated frequency would be worse than an absent one. Full audit: "
+        "`docs/HISTORICAL_CALIBRATION_READINESS.md`."
+    )
 
 
 def _views_by_horizon(result: InvestmentResearchResult | None) -> dict[str, HorizonResearchView]:
@@ -252,6 +302,7 @@ def render_brief(
     outcome: ResearchOutcome,
     meta: dict,
     evidence: list | None = None,
+    integrated: list[IntegratedHorizon] | None = None,
 ) -> str:
     lines: list[str] = []
     add = lines.append
@@ -259,6 +310,11 @@ def render_brief(
     views = _views_by_horizon(result)
     actions = {v.horizon: v.action.value for v in verdicts}
     ordered = sorted(verdicts, key=lambda v: HZ_ORDER.index(v.horizon))
+    if integrated is None:
+        # No calibration supplied: every historical cell reports UNAVAILABLE,
+        # which is the honest reading rather than a blank column.
+        integrated = build_integrated_horizons(pos, verdicts, [], {}, result)
+    by_hz = {i.horizon: i for i in integrated}
 
     add(f"# {pos.symbol} — Investment Decision Brief")
     add(
@@ -280,16 +336,23 @@ def render_brief(
 
     add("\n### Timeframe decision matrix\n")
     add(
-        "| Horizon | Security view | Action | Conviction | Setup | Why | What would change it |\n"
+        "| Horizon | View | Action | Historical evidence | Setup · conviction | Why "
+        "| What would change it |\n"
         "| --- | --- | --- | --- | --- | --- | --- |"
     )
     for verdict in ordered:
         view = views.get(verdict.horizon)
-        label = _action_label(verdict.action.value, view.research_bias if view else None)
+        cell = by_hz.get(verdict.horizon)
+        label = (
+            cell.integrated_view["display_action"]
+            if cell is not None
+            else _action_label(verdict.action.value, view.research_bias if view else None)
+        )
+        hist = _historical_cell(cell)
         if view is None:
             add(
                 f"| **{verdict.horizon}** | {verdict.direction.value} | **{label}** "
-                f"| — | — | _no research view for this horizon_ | — |"
+                f"| {hist} | — | _no research view for this horizon_ | — |"
             )
             continue
         drivers = (
@@ -298,16 +361,19 @@ def render_brief(
         )
         add(
             f"| **{verdict.horizon}** | {verdict.direction.value} | **{label}** "
-            f"| {view.conviction.value} | {view.setup.value} "
-            f"| {_short(view.rationale, 34)}{drivers} | {_short(view.what_changes_it, 20)} |"
+            f"| {hist} | {view.setup.value} · {view.conviction.value} "
+            f"| {_short(view.rationale, 32)}{drivers} | {_short(view.what_changes_it, 18)} |"
         )
 
     add(
-        "\n*Security view is the platform's deterministic reading of the SECURITY. "
-        "Action is the platform's deterministic PORTFOLIO decision; an `ADD-BIASED` / "
-        "`TRIM-BIASED` prefix is research interpretation only and never changes the "
-        "action. Conviction and Setup are qualitative judgments, not probabilities.*"
+        "\n*View is the platform's deterministic reading of the SECURITY. Action is its "
+        "deterministic PORTFOLIO decision; an `ADD-BIASED` / `TRIM-BIASED` prefix is research "
+        "interpretation only and never changes the action. Historical evidence is an empirical "
+        "frequency over past states, NOT a forecast. Setup and conviction are qualitative "
+        "judgments, not probabilities.*"
     )
+
+    add(f"\n{_historical_note(integrated)}")
 
     add(_headline_block(result, outcome, actions))
 

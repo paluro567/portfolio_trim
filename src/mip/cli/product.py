@@ -176,6 +176,35 @@ def _write_deterministic(stamp: Path, h: _Holding, as_of: date) -> Path:
     return report_path
 
 
+def _calibration_context(session):
+    """(lookup, readiness). The data-quality gate runs live, once per run.
+
+    A failing gate does not raise: it produces a lookup that answers UNAVAILABLE
+    with the reason, so the report says plainly why no historical evidence is
+    shown instead of leaving an empty column.
+    """
+    from mip.calibration.lookup import CalibrationLookup
+    from mip.calibration.readiness import assess_readiness
+    from mip.calibration.signal_definition import current_signal_definition
+
+    readiness = assess_readiness(session)
+    lookup = CalibrationLookup.load(
+        current_signal_definition().signature,
+        gate_reason=(readiness.reason() or None),
+    )
+    return lookup, readiness
+
+
+def _integrated(h: _Holding, outcome, lookup):
+    """Build the four-channel integrated horizon objects for one holding."""
+    from mip.research_assistant.integrated import build_integrated_horizons
+
+    states = {v.horizon: v.direction.value for v in h.verdicts}
+    calibrations = lookup.for_all_horizons(states)
+    result = outcome.result if outcome.available else None
+    return build_integrated_horizons(h.pos, h.verdicts, h.constraints, calibrations, result)
+
+
 def _research_one(h: _Holding, *, settings, store, refresh: bool):
     """Run research for one holding. Returns a ResearchOutcome; never raises."""
     from mip.research_assistant.research import run_research
@@ -191,7 +220,9 @@ def _research_one(h: _Holding, *, settings, store, refresh: bool):
     )
 
 
-def _write_brief(stamp: Path, h: _Holding, outcome, as_of: date) -> tuple[Path, Path]:
+def _write_brief(
+    stamp: Path, h: _Holding, outcome, as_of: date, integrated=None
+) -> tuple[Path, Path]:
     """Write the decision brief and its research audit companion.
 
     The brief is the human-facing decision tool and is deliberately short; the
@@ -203,7 +234,7 @@ def _write_brief(stamp: Path, h: _Holding, outcome, as_of: date) -> tuple[Path, 
     d = stamp / h.symbol
     d.mkdir(parents=True, exist_ok=True)
     brief = d / f"{h.symbol}_{as_of.isoformat()}_BRIEF.md"
-    brief.write_text(render_brief(h.pos, h.verdicts, outcome, h.meta, h.evidence))
+    brief.write_text(render_brief(h.pos, h.verdicts, outcome, h.meta, h.evidence, integrated))
     audit = d / f"{h.symbol}_{as_of.isoformat()}_RESEARCH_AUDIT.md"
     audit.write_text(render_research_audit(h.pos, h.verdicts, outcome, h.meta))
     return brief, audit
@@ -247,6 +278,18 @@ def _echo_research_summary(outcomes: list[Any]) -> None:
     for o in outcomes:
         if o.validation is not None and not o.validation.ok:
             typer.echo(f"  citations {o.symbol}: {o.validation.summary()}")
+
+
+def _echo_calibration(readiness) -> None:
+    if readiness.gate_passed:
+        typer.echo("calibration: data-quality gate PASSED")
+        return
+    typer.echo(
+        f"calibration: gate FAILED ({len(readiness.blockers)} blocker(s)) — historical "
+        f"evidence reported UNAVAILABLE"
+    )
+    for blocker in readiness.blockers:
+        typer.echo(f"  - {blocker}")
 
 
 def _research_context(no_llm: bool):
@@ -303,6 +346,7 @@ def report(
             )
         except ValueError as exc:
             raise typer.BadParameter(str(exc)) from exc
+        lookup, readiness = _calibration_context(session)
 
     stamp = out_dir / as_of_d.isoformat()
     if not research_only:
@@ -313,10 +357,13 @@ def report(
     if want_research:
         settings, store = _research_context(no_llm)
         outcome = _research_one(holding, settings=settings, store=store, refresh=refresh_research)
-        brief_path, audit_path = _write_brief(stamp, holding, outcome, as_of_d)
+        brief_path, audit_path = _write_brief(
+            stamp, holding, outcome, as_of_d, _integrated(holding, outcome, lookup)
+        )
         typer.echo(f"brief:   {brief_path}")
         typer.echo(f"audit:   {audit_path}")
         _echo_research_summary([outcome])
+        _echo_calibration(readiness)
     elif research_only:
         raise typer.BadParameter("--research-only requires --with-research (and not --no-llm)")
 
@@ -364,6 +411,7 @@ def research(
             )
         except ValueError as exc:
             raise typer.BadParameter(str(exc)) from exc
+        lookup, readiness = _calibration_context(session)
 
     if show_payload:
         typer.echo(holding.payload.as_prompt_json())
@@ -377,7 +425,9 @@ def research(
 
     outcome = _research_one(holding, settings=settings, store=store, refresh=refresh_research)
     stamp = out_dir / as_of_d.isoformat()
-    brief_path, audit_path = _write_brief(stamp, holding, outcome, as_of_d)
+    brief_path, audit_path = _write_brief(
+        stamp, holding, outcome, as_of_d, _integrated(holding, outcome, lookup)
+    )
     typer.echo(f"brief:    {brief_path}")
     typer.echo(f"audit:    {audit_path}")
     if outcome.available and outcome.catalogue is not None:
@@ -386,6 +436,7 @@ def research(
             f"({', '.join(f'{k} {v}' for k, v in outcome.catalogue.quality_mix().items())})"
         )
     _echo_research_summary([outcome])
+    _echo_calibration(readiness)
 
 
 @app.command("portfolio")
@@ -429,6 +480,7 @@ def portfolio(
                 latest_price = h.pos.price_date
             rows.append(summarise(sym, h.pos, h.evidence, h.verdicts, h.stale))
             holdings.append(h)
+        lookup, readiness = _calibration_context(session)
 
     for h in holdings:
         _write_deterministic(stamp, h, as_of_d)
@@ -465,11 +517,12 @@ def portfolio(
     for h in targets:
         typer.echo(f"  researching {h.symbol} ...")
         outcome = _research_one(h, settings=settings, store=store, refresh=refresh_research)
-        _write_brief(stamp, h, outcome, as_of_d)  # brief + research audit
+        _write_brief(stamp, h, outcome, as_of_d, _integrated(h, outcome, lookup))
         outcomes.append(outcome)
         summaries.append(summarise_for_portfolio(outcome, h.payload))
 
     _echo_research_summary(outcomes)
+    _echo_calibration(readiness)
 
     result, usage, error = run_portfolio_synthesis(
         as_of_d, summaries, settings=settings, store=store

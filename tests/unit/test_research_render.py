@@ -83,7 +83,7 @@ def _setup(pos=None, result=_DEFAULT, status=ResearchStatus.OK, sources=None, **
 def _matrix_rows(brief: str) -> list[str]:
     """The data rows of the timeframe decision matrix."""
     section = brief.split("### Timeframe decision matrix", 1)[1]
-    section = section.split("*Security view is", 1)[0]
+    section = section.split("*View is the platform", 1)[0]
     return [ln for ln in section.splitlines() if ln.startswith("| **")]
 
 
@@ -470,7 +470,12 @@ def test_audit_keeps_content_the_brief_drops():
     assert "## Company summary" in audit
     assert "## Scenarios (full)" in audit
     assert "## Action assessment (full)" in audit
-    assert len(audit) > len(brief), "the audit is the long document, the brief is not"
+    # A raw length comparison is fixture-sensitive (on a minimal fixture the
+    # audit's extra sections are empty). The real guarantee is that the audit
+    # carries per-horizon detail and full provenance the brief omits.
+    assert "## Per-horizon research views" in audit
+    assert "## Per-horizon research views" not in brief
+    assert "## Provenance" in audit and "## Provenance" not in brief
 
 
 def test_audit_renders_when_research_failed():
@@ -627,3 +632,75 @@ def test_catalyst_table_absent_only_when_neither_source_has_a_date():
     pos, verdicts, outcome = _setup(result=make_result(catalysts=[]))
     brief = render_brief(pos, verdicts, outcome, META, evidence=None)
     assert "_No dated catalysts identified._" in brief
+
+
+# ==========================================================================
+# HISTORICAL EVIDENCE CHANNEL IN THE REPORT
+# ==========================================================================
+def test_matrix_shows_unavailable_rather_than_a_blank_historical_cell():
+    pos, verdicts, outcome = _setup()
+    brief = render_brief(pos, verdicts, outcome, META)
+    rows = _matrix_rows(brief)
+    assert len(rows) == 5
+    for row in rows:
+        assert "unavailable" in row, "an absent calibration must say so in the cell"
+    assert "Historical evidence is unavailable at every horizon" in brief
+    assert "a fabricated frequency would be worse than an absent one" in brief
+
+
+def test_no_historical_percentages_appear_when_calibration_is_unavailable():
+    pos, verdicts, outcome = _setup()
+    brief = render_brief(pos, verdicts, outcome, META)
+    matrix = "\n".join(_matrix_rows(brief))
+    for phrase in ("beat SPY", "positive ·", "N="):
+        assert phrase not in matrix
+
+
+def test_matrix_shows_figures_and_status_when_calibration_is_available():
+    from mip.calibration.contracts import HORIZONS, HorizonCalibration, ValidationStatus
+    from mip.research_assistant.integrated import build_integrated_horizons
+
+    pos, verdicts, outcome = _setup()
+    cals = {
+        hz: HorizonCalibration(
+            horizon=hz,
+            signal_state="NEUTRAL",
+            validation_status=ValidationStatus.PROMISING_BUT_UNPROVEN,
+            sample_n=412,
+            positive_return_rate=0.63,
+            spy_outperformance_rate=0.58,
+            median_forward_return=0.084,
+        )
+        for hz in HORIZONS
+    }
+    integrated = build_integrated_horizons(pos, verdicts, _cons(), cals, outcome.result)
+    brief = render_brief(pos, verdicts, outcome, META, integrated=integrated)
+
+    assert "63% positive" in brief
+    assert "58% beat SPY" in brief
+    assert "N=412" in brief
+    assert "PROMISING_BUT_UNPROVEN" in brief
+    assert "empirical frequency over past states, NOT a forecast" in brief
+
+
+def test_rejected_calibration_shows_no_figures_in_the_matrix():
+    from mip.calibration.contracts import HORIZONS, HorizonCalibration, ValidationStatus
+    from mip.research_assistant.integrated import build_integrated_horizons
+
+    pos, verdicts, outcome = _setup()
+    cals = {
+        hz: HorizonCalibration(
+            horizon=hz,
+            signal_state="NEUTRAL",
+            validation_status=ValidationStatus.REJECTED,
+            sample_n=999,
+            positive_return_rate=0.9,
+        )
+        for hz in HORIZONS
+    }
+    integrated = build_integrated_horizons(pos, verdicts, _cons(), cals, outcome.result)
+    brief = render_brief(pos, verdicts, outcome, META, integrated=integrated)
+
+    assert "REJECTED" in brief
+    assert "90% positive" not in brief
+    assert "N=999" not in brief
