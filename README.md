@@ -76,6 +76,33 @@ suppression on oversized positions silently stops firing. One unpriced holding
 degrades weights for all of them. Steps 1 and 2 fix this; check that the report
 shows a real percentage rather than `unavailable`.
 
+### Optional — cited qualitative research (`--with-research`)
+
+The deterministic reports above answer "what does the measured state look like".
+They cannot say what is happening at the company. The research layer adds current,
+sourced, qualitative research and writes a concise **investment decision brief**
+alongside the long-form report.
+
+It is **off by default** because every run makes OpenAI API calls. Set
+`OPENAI_API_KEY` in `.env`, then:
+
+```bash
+uv run mip product research --symbol AMZN --as-of $(date +%F)
+```
+
+Start with one holding. `--show-payload` prints exactly what the model would be
+told and makes no API call. `--max-holdings N` caps a portfolio run, and
+`--no-llm` hard-disables the layer.
+
+Outputs land beside the existing ones: `<TICKER>_<DATE>_BRIEF.md` per holding and
+`PORTFOLIO_RESEARCH.md` for the book. The long-form `<TICKER>_<DATE>.md` is
+unchanged and remains the audit artifact.
+
+The layer never computes a number — price, weight, P&L, returns and the
+deterministic ADD/HOLD/TRIM/EXIT actions all still come from Python, and a brief
+renders them even when research fails. Full detail, including the probability and
+citation policies, is in **`docs/RESEARCH_ASSISTANT.md`**.
+
 ### Periodic — not daily
 
 ```bash
