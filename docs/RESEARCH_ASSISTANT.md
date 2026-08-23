@@ -1,6 +1,6 @@
 # Research Assistant — the OpenAI qualitative layer
 
-**Status:** implemented, unit-tested against a mocked SDK, **not yet run live**.
+**Status:** implemented, unit-tested against a mocked SDK, and **run live on AMZN**.
 **Package:** `src/mip/research_assistant/`
 
 ## 1. Why this exists
@@ -87,8 +87,15 @@ name appears in exactly one place in the source (`config.DEFAULT_MODEL`).
 
 ## 4. Secret handling
 
-- The key is read from the environment **at call time** by `config.read_api_key()`
-  and handed straight to the SDK constructor.
+- The key is read **at call time** by `config.read_api_key()`: environment
+  first, then `./.env`. The `.env` fallback exists because that is where the
+  rest of the platform is configured and where this document tells you to put
+  the key — reading only `os.environ` was a defect, since the key was then
+  invisible unless separately exported.
+- **Unit tests are isolated from it.** `tests/unit/conftest.py` neutralises the
+  `.env` fallback and unsets the variable for every unit test, so a test
+  exercising the "no key" path cannot find a real key and make a billable call.
+  That happened once during development; the fixture exists so it cannot recur.
 - `ResearchSettings` carries only `api_key_present: bool`. There is no field that
   could hold the key, pinned by `test_settings_dataclass_has_no_key_field`.
 - The key never enters a prompt, an artifact, `inputs.json`, report metadata, or a
@@ -129,7 +136,8 @@ uv run mip product portfolio --as-of 2026-08-21 --with-research --max-holdings 5
 | Path | What |
 |---|---|
 | `<DATE>/<SYM>/<SYM>_<DATE>.md` | Long-form deterministic report — **unchanged**, still the audit artifact |
-| `<DATE>/<SYM>/<SYM>_<DATE>_BRIEF.md` | **New.** The concise investment decision brief |
+| `<DATE>/<SYM>/<SYM>_<DATE>_BRIEF.md` | **The primary human-facing product.** A timeframe-first decision brief |
+| `<DATE>/<SYM>/<SYM>_<DATE>_RESEARCH_AUDIT.md` | Full research record: every source, every claim, validation, lineage |
 | `<DATE>/<SYM>/inputs.json` | Deterministic inputs — unchanged |
 | `<DATE>/PORTFOLIO.md` | Deterministic portfolio view — unchanged |
 | `<DATE>/PORTFOLIO_RESEARCH.md` | **New.** Cross-position synthesis |
@@ -138,6 +146,53 @@ uv run mip product portfolio --as-of 2026-08-21 --with-research --max-holdings 5
 
 The long-form report keeps its existing filename deliberately: it is pinned by
 committed test fixtures, and renaming it would break them for no benefit.
+
+## 6a. The shape of the brief
+
+The brief is organised as **TIMEFRAME → ACTION → CONVICTION → WHY → WHAT
+CHANGES IT**, because the question it exists to answer is "what do I do about
+this position, and does the answer differ by horizon?".
+
+| Section | Purpose |
+|---|---|
+| 1. Decision summary | One paragraph, then the **timeframe decision matrix** — five rows, one per horizon |
+| 2. Why the signals differ by timeframe | The mechanism: what governs short, medium and long horizons here |
+| 3. Current setup | Quantitative / fundamental / market, capped at 4/4/3 bullets |
+| 4. Position management | ADD if / HOLD while / TRIM if / EXIT if, ≤3 bullets each |
+| 5. Key catalysts | ≤5 dated events, with **watch variables kept separate** |
+| 6. What changed | ≤5 bullets, labelled IMPROVED / DETERIORATED / UNCHANGED |
+| 7. Key risks and contradictions | Contradictions first, ≤5 total |
+| 8. Bull / base / bear | One compact table |
+| 9. Top sources | The 5–12 most-cited, not the full catalogue |
+| 10. Position and deterministic verdicts | The numbers, unaltered |
+
+**Three things are held apart and never collapsed**, because merging them is
+what makes a recommendation unreadable:
+
+* **Security view** — the platform's deterministic reading of the security
+  (`POSITIVE` / `CONFLICTED` / …).
+* **Action** — the platform's deterministic portfolio decision (`HOLD`).
+* **Research interpretation** — `research_bias`, rendered as a prefix
+  (`ADD-BIASED HOLD`) meaning the security case is good but something, usually
+  sizing, argues against adding.
+
+`_action_label` is pinned by test to **always end with the deterministic action
+word**, so an `ADD-BIASED HOLD` can never quietly become an ADD. The bias
+annotation is applied only to a HOLD — an ADD that research also likes is not an
+"ADD-BIASED ADD".
+
+Two things in the catalyst table come from Python, not the model: the **affected
+horizons** (arithmetic on the catalyst date against the horizon windows) and the
+**next scheduled earnings date**, which the platform's own event store knows and
+the model is often rightly unwilling to assert without a source.
+
+**Length.** Table cells and bullets are truncated to keep the brief scannable;
+the untruncated text always survives in the research audit. A hard word cap is
+not enforced in tests because prose length is the model's to choose — what is
+enforced are the structural caps above. On the live AMZN run the brief came to
+~1,800 words before sources against a 800–1,500 target; the overage is the
+timeframe matrix (~480 words), which is the section the redesign exists to
+create.
 
 ## 7. The two policies that make this safe
 
@@ -256,7 +311,8 @@ credential, file path or environment value is ever placed in a prompt.
 
 ## 14. Versioning
 
-`PROMPT_VERSION` and `SCHEMA_VERSION` live in `mip/research_assistant/__init__.py`.
+`PROMPT_VERSION` (currently `1.1.1`) and `SCHEMA_VERSION` (currently `1.1.0`)
+live in `mip/research_assistant/__init__.py`.
 **Bump them whenever prompt text or the schema changes** — they are part of the
 cache key and are recorded in every artifact, so a stale cached conclusion cannot
 survive a prompt edit.

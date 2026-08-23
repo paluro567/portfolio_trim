@@ -147,13 +147,16 @@ def test_with_research_writes_a_brief_even_when_the_layer_is_disabled(
     )
     assert result.exit_code == 0, result.output
 
-    brief = out / "2026-07-16" / "TEST" / "TEST_2026-07-16_BRIEF.md"
+    d = out / "2026-07-16" / "TEST"
+    brief = d / "TEST_2026-07-16_BRIEF.md"
     assert brief.is_file()
     text = brief.read_text()
-    assert "Qualitative research: UNAVAILABLE" in text
+    assert "Qualitative research is UNAVAILABLE" in text
     assert "OPENAI_API_KEY" in text
+    # The research audit companion is written alongside the brief.
+    assert (d / "TEST_2026-07-16_RESEARCH_AUDIT.md").is_file()
     # The deterministic long-form report is unaffected.
-    assert (out / "2026-07-16" / "TEST" / "TEST_2026-07-16.md").is_file()
+    assert (d / "TEST_2026-07-16.md").is_file()
 
 
 def test_research_only_requires_with_research(stub_gather, tmp_path):

@@ -6,8 +6,12 @@ Two artifacts per holding:
                             audit artifact, and still the only thing produced
                             when the research layer is off)
 * ``<SYM>_<DATE>_BRIEF.md`` the concise INVESTMENT DECISION BRIEF, added by
-                            ``--with-research``, combining the deterministic
-                            evidence with current cited web research
+                            ``--with-research``. Organised by TIMEFRAME →
+                            ACTION → CONVICTION → WHY → WHAT CHANGES IT.
+* ``<SYM>_<DATE>_RESEARCH_AUDIT.md`` the full research record the brief
+                            summarises: every source, every claim, validation
+                            and lineage. Shortening the brief costs no
+                            auditability because nothing is discarded here.
 
 The research layer is opt-in per run and degrades to "UNAVAILABLE" rather than
 failing the report.
@@ -187,14 +191,22 @@ def _research_one(h: _Holding, *, settings, store, refresh: bool):
     )
 
 
-def _write_brief(stamp: Path, h: _Holding, outcome, as_of: date) -> Path:
-    from mip.research_assistant.render import render_brief
+def _write_brief(stamp: Path, h: _Holding, outcome, as_of: date) -> tuple[Path, Path]:
+    """Write the decision brief and its research audit companion.
+
+    The brief is the human-facing decision tool and is deliberately short; the
+    audit carries the full source catalogue, every claim and the lineage, so
+    shortening the brief costs no auditability.
+    """
+    from mip.research_assistant.render import render_brief, render_research_audit
 
     d = stamp / h.symbol
     d.mkdir(parents=True, exist_ok=True)
-    path = d / f"{h.symbol}_{as_of.isoformat()}_BRIEF.md"
-    path.write_text(render_brief(h.pos, h.verdicts, outcome, h.meta))
-    return path
+    brief = d / f"{h.symbol}_{as_of.isoformat()}_BRIEF.md"
+    brief.write_text(render_brief(h.pos, h.verdicts, outcome, h.meta, h.evidence))
+    audit = d / f"{h.symbol}_{as_of.isoformat()}_RESEARCH_AUDIT.md"
+    audit.write_text(render_research_audit(h.pos, h.verdicts, outcome, h.meta))
+    return brief, audit
 
 
 def _usage_summary(usages: list[Any]) -> str:
@@ -301,8 +313,9 @@ def report(
     if want_research:
         settings, store = _research_context(no_llm)
         outcome = _research_one(holding, settings=settings, store=store, refresh=refresh_research)
-        brief_path = _write_brief(stamp, holding, outcome, as_of_d)
+        brief_path, audit_path = _write_brief(stamp, holding, outcome, as_of_d)
         typer.echo(f"brief:   {brief_path}")
+        typer.echo(f"audit:   {audit_path}")
         _echo_research_summary([outcome])
     elif research_only:
         raise typer.BadParameter("--research-only requires --with-research (and not --no-llm)")
@@ -364,8 +377,9 @@ def research(
 
     outcome = _research_one(holding, settings=settings, store=store, refresh=refresh_research)
     stamp = out_dir / as_of_d.isoformat()
-    brief_path = _write_brief(stamp, holding, outcome, as_of_d)
+    brief_path, audit_path = _write_brief(stamp, holding, outcome, as_of_d)
     typer.echo(f"brief:    {brief_path}")
+    typer.echo(f"audit:    {audit_path}")
     if outcome.available and outcome.catalogue is not None:
         typer.echo(
             f"sources:  {len(outcome.catalogue.sources)} "
@@ -451,7 +465,7 @@ def portfolio(
     for h in targets:
         typer.echo(f"  researching {h.symbol} ...")
         outcome = _research_one(h, settings=settings, store=store, refresh=refresh_research)
-        _write_brief(stamp, h, outcome, as_of_d)
+        _write_brief(stamp, h, outcome, as_of_d)  # brief + research audit
         outcomes.append(outcome)
         summaries.append(summarise_for_portfolio(outcome, h.payload))
 
