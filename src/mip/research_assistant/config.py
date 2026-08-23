@@ -23,15 +23,55 @@ DEFAULT_MODEL = "gpt-5.6-terra"
 _KEY_ENV = "OPENAI_API_KEY"
 
 
-def _flag(name: str, default: bool) -> bool:
+def _dotenv(name: str) -> str | None:
+    """Read one value from ``./.env``.
+
+    The rest of the platform configures itself from ``.env`` via
+    pydantic-settings, so documenting "put OPENAI_API_KEY in .env" and then
+    reading only ``os.environ`` was a defect: the key was invisible to this
+    layer unless separately exported. The environment still wins; this is only
+    consulted when the variable is unset.
+
+    Deliberately minimal and never logged. Path is cwd-relative, matching the
+    ``env_file=".env"`` behaviour in ``mip.core.config``.
+    """
+    path = Path(".env")
+    if not path.is_file():
+        return None
+    try:
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            if key.strip() != name:
+                continue
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            return value or None
+    except OSError:
+        return None
+    return None
+
+
+def _env(name: str) -> str | None:
+    """Environment first, then ``.env``."""
     raw = os.environ.get(name)
+    if raw is not None and raw.strip() != "":
+        return raw
+    return _dotenv(name)
+
+
+def _flag(name: str, default: bool) -> bool:
+    raw = _env(name)
     if raw is None or raw.strip() == "":
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _int(name: str, default: int, *, minimum: int = 0) -> int:
-    raw = os.environ.get(name)
+    raw = _env(name)
     if raw is None or raw.strip() == "":
         return default
     try:
@@ -80,20 +120,20 @@ class ResearchSettings:
 
 
 def load_research_settings() -> ResearchSettings:
-    key = os.environ.get(_KEY_ENV, "")
+    key = _env(_KEY_ENV) or ""
     return ResearchSettings(
         enabled=_flag("MIP_OPENAI_ENABLED", True),
         api_key_present=bool(key.strip()),
-        model=(os.environ.get("OPENAI_MODEL") or DEFAULT_MODEL).strip() or DEFAULT_MODEL,
+        model=(_env("OPENAI_MODEL") or DEFAULT_MODEL).strip() or DEFAULT_MODEL,
         max_search_calls=_int("MIP_OPENAI_MAX_SEARCH_CALLS", 8, minimum=1),
         freshness_hours=_int("MIP_OPENAI_RESEARCH_FRESHNESS_HOURS", 18, minimum=0),
         timeout_seconds=_int("MIP_OPENAI_TIMEOUT_SECONDS", 300, minimum=10),
         max_output_tokens=_int("MIP_OPENAI_MAX_OUTPUT_TOKENS", 16000, minimum=1000),
-        research_root=Path(os.environ.get("MIP_RESEARCH_ROOT") or "data/investment_research"),
+        research_root=Path(_env("MIP_RESEARCH_ROOT") or "data/investment_research"),
     )
 
 
 def read_api_key() -> str | None:
     """Fetch the key at call time. Callers must never store or log the result."""
-    key = os.environ.get(_KEY_ENV, "").strip()
+    key = (_env(_KEY_ENV) or "").strip()
     return key or None
